@@ -4,12 +4,12 @@ import time
 import random
 import logging
 from datetime import datetime
-from anthropic import Anthropic, APIStatusError
 from backend.config import settings
 from backend.models.schemas import SeverityLevel, MessageType
 from backend.logging.governance_logger import governance_logger
 from backend.services.escalation_rules import EscalationRules
 from backend.services.clarifying_questions import ClarifyingQuestionsService
+from backend.services.ai_client import get_ai_client, AIClientError
 
 logger = logging.getLogger(__name__)
 
@@ -150,9 +150,11 @@ Do NOT use combined values like "MEDIUM-HIGH" or "LOW-MEDIUM". Choose the single
     }
 
     def __init__(self):
-        self.client = Anthropic(api_key=settings.anthropic_api_key)
+        # Initialize AI client based on settings (Anthropic or Bedrock)
+        self.ai_client = get_ai_client(settings)
         self.escalation_rules = EscalationRules()
         self.clarifying_service = ClarifyingQuestionsService()
+        logger.info(f"RecommendationEngine initialized with AI provider: {self.ai_client.provider_name}")
 
     def _normalize_severity(self, severity_str: str) -> SeverityLevel:
         """
@@ -298,39 +300,21 @@ Do NOT use combined values like "MEDIUM-HIGH" or "LOW-MEDIUM". Choose the single
         # Note: Prompt logging is now consolidated into log_request() in process_message()
         # to avoid Splunk merging events that occur within the same second
 
-        # Call Claude API with retry logic for transient errors
-        max_retries = 3
-        retry_delay = 1.0  # Initial delay in seconds
-        response = None
-        last_error = None
-        
-        for attempt in range(max_retries):
-            try:
-                response = self.client.messages.create(
-                    model=settings.anthropic_model,
-                    max_tokens=2048,
-                    temperature=0.7,
-                    system=self.SYSTEM_PROMPT,
-                    messages=messages
-                )
-                break  # Success, exit retry loop
-            except APIStatusError as e:
-                last_error = e
-                # Retry on 529 (Overloaded) or 503 (Service Unavailable) errors
-                if e.status_code in (529, 503, 500):
-                    if attempt < max_retries - 1:
-                        wait_time = retry_delay * (2 ** attempt) + random.uniform(0, 1)
-                        logger.warning(f"Claude API error {e.status_code}, retrying in {wait_time:.1f}s (attempt {attempt + 1}/{max_retries})")
-                        time.sleep(wait_time)
-                        continue
-                raise  # Re-raise if not retryable or max retries reached
-        
-        if response is None:
-            raise Exception(f"Claude API error after {max_retries} retries: {last_error}")
+        # Call AI API using the abstraction layer (handles retries internally)
+        try:
+            response = self.ai_client.create_message(
+                messages=messages,
+                system=self.SYSTEM_PROMPT,
+                max_tokens=2048,
+                temperature=0.7
+            )
+        except AIClientError as e:
+            logger.error(f"AI client error: {e}")
+            raise Exception(f"AI API error: {e}") from e
 
         # Calculate performance metrics
         duration = time.time() - start_time
-        output_text = response.content[0].text
+        output_text = response.content
 
         # Parse response - handle markdown code blocks if present
         import json
@@ -416,9 +400,9 @@ Do NOT use combined values like "MEDIUM-HIGH" or "LOW-MEDIUM". Choose the single
             output_messages=[{"role": "assistant", "content": final_message}],  # Full message with PII/PHI
             response_text=complete_display_text,  # Complete text as displayed to user (with badges)
             usage_data={
-                "usage_input_tokens": response.usage.input_tokens,
-                "usage_output_tokens": response.usage.output_tokens,
-                "usage_total_tokens": response.usage.input_tokens + response.usage.output_tokens
+                "usage_input_tokens": response.input_tokens,
+                "usage_output_tokens": response.output_tokens,
+                "usage_total_tokens": response.input_tokens + response.output_tokens
             },
             performance_data={
                 "client_operation_duration": duration

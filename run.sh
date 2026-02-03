@@ -1,9 +1,10 @@
 #!/bin/bash
 
-# MedAdvice v3 - Quick Start Script
+# MedAdvice v4 - Quick Start Script
+# Supports dual-environment deployment: Anthropic API (local) or AWS Bedrock (production)
 
 echo "╔════════════════════════════════════════════════╗"
-echo "║         MedAdvice v3 - Starting...            ║"
+echo "║         MedAdvice v4 - Starting...            ║"
 echo "╚════════════════════════════════════════════════╝"
 echo ""
 
@@ -29,17 +30,34 @@ fi
 # Check for .env file
 if [ ! -f ".env" ]; then
     echo "❌ .env file not found!"
-    echo "Please copy .env.example to .env and configure your ANTHROPIC_API_KEY"
+    echo "Please copy .env.example to .env and configure your settings"
     echo ""
     echo "Run: cp .env.example .env"
     echo "Then edit .env to add your API key"
     exit 1
 fi
 
-# Check for API key
-if ! grep -q "ANTHROPIC_API_KEY=sk-" .env 2>/dev/null; then
-    echo "⚠️  WARNING: ANTHROPIC_API_KEY not configured in .env"
-    echo "The application will not work without a valid API key"
+# Check AI provider configuration
+AI_PROVIDER=$(grep "^AI_PROVIDER=" .env 2>/dev/null | cut -d'=' -f2)
+if [ "$AI_PROVIDER" = "bedrock" ]; then
+    echo "🔧 AI Provider: AWS Bedrock"
+    # Check for AWS credentials
+    if [ -z "$AWS_ACCESS_KEY_ID" ] && [ ! -f ~/.aws/credentials ]; then
+        echo "⚠️  WARNING: AWS credentials not found"
+        echo "Configure AWS CLI: aws configure"
+        echo ""
+    fi
+elif [ "$AI_PROVIDER" = "anthropic" ] || [ -z "$AI_PROVIDER" ]; then
+    echo "🔧 AI Provider: Anthropic API"
+    # Check for Anthropic API key
+    if ! grep -q "ANTHROPIC_API_KEY=sk-" .env 2>/dev/null; then
+        echo "⚠️  WARNING: ANTHROPIC_API_KEY not configured in .env"
+        echo "The application will not work without a valid API key"
+        echo ""
+    fi
+else
+    echo "⚠️  WARNING: Unknown AI_PROVIDER: $AI_PROVIDER"
+    echo "Valid options: anthropic, bedrock"
     echo ""
 fi
 
@@ -47,7 +65,7 @@ fi
 mkdir -p logs
 
 echo ""
-echo "Starting MedAdvice v3..."
+echo "Starting MedAdvice v4..."
 echo ""
 echo "Access the application at:"
 echo "  📱 Chat Interface:    http://localhost:8001/app"

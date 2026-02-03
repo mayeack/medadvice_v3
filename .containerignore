@@ -1,0 +1,76 @@
+# =============================================================================
+# MedAdvice v4 Container Ignore File
+# =============================================================================
+# Files and directories to exclude from the container image
+# =============================================================================
+
+# Virtual environment
+venv/
+.venv/
+env/
+.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Local development files
+.env
+.env.local
+.env.*.local
+
+# Database files (use RDS in production)
+*.db
+*.sqlite
+*.sqlite3
+
+# Log files (use CloudWatch in production)
+logs/
+*.log
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Documentation (not needed in container)
+*.md
+!README.md
+docs/
+
+# Misc
+.DS_Store
+Thumbs.db
+*.bak
+*.tmp
+
+# Plan files
+*.plan.md
+
+# Splunk TA (separate deployment)
+TA-gen_ai_cim/
+
+# Shell scripts (not needed in container)
+run.sh
+verify_installation.sh

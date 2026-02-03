@@ -14,21 +14,30 @@ if env_path.exists():
                 os.environ[key.strip()] = value.strip()
 
 class Settings(BaseSettings):
-    # API Configuration
+    # AI Provider Selection (supports dual-environment deployment)
+    # "anthropic" = Direct Anthropic API (local development)
+    # "bedrock" = AWS Bedrock (production on AWS)
+    ai_provider: str = "anthropic"
+
+    # Anthropic API Configuration (used when ai_provider="anthropic")
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-5-20250929"
 
+    # AWS Bedrock Configuration (used when ai_provider="bedrock")
+    aws_region: str = "us-east-1"
+    bedrock_model_id: str = "anthropic.claude-3-sonnet-20240229-v1:0"
+
     # Application
-    app_name: str = "MedAdvice v3"
-    app_version: str = "3.0.0"
-    environment: str = "development"
+    app_name: str = "MedAdvice v4"
+    app_version: str = "4.0.0"
+    environment: str = "development"  # "development" or "production"
     debug: bool = True
 
     # Server
     host: str = "0.0.0.0"
     port: int = 8001
 
-    # Database
+    # Database (SQLite for local, PostgreSQL for AWS)
     database_url: str = "sqlite:///./medadvice.db"
 
     # Logging
