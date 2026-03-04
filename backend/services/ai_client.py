@@ -168,7 +168,13 @@ class AnthropicClient(AIClient):
 
 
 class BedrockClient(AIClient):
-    """Client for AWS Bedrock (production deployment)"""
+    """Client for AWS Bedrock (production deployment)
+    
+    Supports multiple model families:
+    - Anthropic Claude (anthropic.claude-*)
+    - Amazon Nova (amazon.nova-*)
+    - Amazon Titan (amazon.titan-*) [legacy]
+    """
     
     def __init__(self, region: str, model_id: str):
         import boto3
@@ -189,11 +195,172 @@ class BedrockClient(AIClient):
         )
         self.model_id = model_id
         self.region = region
-        logger.info(f"Initialized Bedrock client with model: {model_id} in region: {region}")
+        
+        # Detect model family
+        if model_id.startswith("anthropic."):
+            self.model_family = "claude"
+        elif model_id.startswith("amazon.nova"):
+            self.model_family = "nova"
+        elif model_id.startswith("amazon.titan"):
+            self.model_family = "titan"
+        else:
+            self.model_family = "unknown"
+            
+        logger.info(f"Initialized Bedrock client with model: {model_id} (family: {self.model_family}) in region: {region}")
     
     @property
     def provider_name(self) -> str:
         return "bedrock"
+    
+    def _build_claude_request(
+        self,
+        messages: List[Dict[str, str]],
+        system: str,
+        max_tokens: int,
+        temperature: float
+    ) -> str:
+        """Build request body for Anthropic Claude models"""
+        return json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "system": system,
+            "messages": messages
+        })
+    
+    def _parse_claude_response(self, result: Dict[str, Any]) -> AIClientResponse:
+        """Parse response from Anthropic Claude models"""
+        return AIClientResponse(
+            id=result.get("id", f"bedrock-{int(time.time())}"),
+            content=result["content"][0]["text"],
+            model=self.model_id,
+            input_tokens=result["usage"]["input_tokens"],
+            output_tokens=result["usage"]["output_tokens"],
+            stop_reason=result.get("stop_reason", "end_turn")
+        )
+    
+    def _build_titan_request(
+        self,
+        messages: List[Dict[str, str]],
+        system: str,
+        max_tokens: int,
+        temperature: float
+    ) -> str:
+        """Build request body for Amazon Titan models"""
+        # Combine system prompt and messages into a single input text
+        # Titan uses a simple text-in/text-out format
+        prompt_parts = []
+        
+        if system:
+            prompt_parts.append(f"System: {system}\n")
+        
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            if role == "user":
+                prompt_parts.append(f"Human: {content}")
+            elif role == "assistant":
+                prompt_parts.append(f"Assistant: {content}")
+        
+        # Add assistant prompt to encourage response
+        prompt_parts.append("Assistant:")
+        
+        input_text = "\n".join(prompt_parts)
+        
+        return json.dumps({
+            "inputText": input_text,
+            "textGenerationConfig": {
+                "maxTokenCount": max_tokens,
+                "temperature": temperature,
+                "topP": 0.9,
+                "stopSequences": ["Human:"]
+            }
+        })
+    
+    def _parse_titan_response(self, result: Dict[str, Any], input_text: str) -> AIClientResponse:
+        """Parse response from Amazon Titan models"""
+        # Titan response format
+        output_text = result["results"][0]["outputText"]
+        token_count = result["results"][0].get("tokenCount", 0)
+        input_token_count = result.get("inputTextTokenCount", 0)
+        completion_reason = result["results"][0].get("completionReason", "FINISH")
+        
+        # Map Titan completion reasons to standard format
+        stop_reason_map = {
+            "FINISH": "end_turn",
+            "LENGTH": "max_tokens",
+            "STOP_SEQUENCE": "stop_sequence"
+        }
+        
+        return AIClientResponse(
+            id=f"titan-{int(time.time())}",
+            content=output_text.strip(),
+            model=self.model_id,
+            input_tokens=input_token_count,
+            output_tokens=token_count,
+            stop_reason=stop_reason_map.get(completion_reason, "end_turn")
+        )
+    
+    def _create_nova_message(
+        self,
+        messages: List[Dict[str, str]],
+        system: str,
+        max_tokens: int,
+        temperature: float
+    ) -> AIClientResponse:
+        """Create message using Amazon Nova via Converse API"""
+        from botocore.exceptions import ClientError
+        
+        # Build messages for Converse API
+        converse_messages = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            converse_messages.append({
+                "role": role,
+                "content": [{"text": content}]
+            })
+        
+        # Build system prompt
+        system_prompts = []
+        if system:
+            system_prompts.append({"text": system})
+        
+        try:
+            response = self.client.converse(
+                modelId=self.model_id,
+                messages=converse_messages,
+                system=system_prompts,
+                inferenceConfig={
+                    "maxTokens": max_tokens,
+                    "temperature": temperature,
+                    "topP": 0.9
+                }
+            )
+            
+            # Parse Nova/Converse response
+            output_message = response.get("output", {}).get("message", {})
+            content_blocks = output_message.get("content", [])
+            output_text = content_blocks[0].get("text", "") if content_blocks else ""
+            
+            usage = response.get("usage", {})
+            stop_reason = response.get("stopReason", "end_turn")
+            
+            return AIClientResponse(
+                id=f"nova-{int(time.time())}",
+                content=output_text,
+                model=self.model_id,
+                input_tokens=usage.get("inputTokens", 0),
+                output_tokens=usage.get("outputTokens", 0),
+                stop_reason=stop_reason
+            )
+            
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
+            error_message = e.response.get("Error", {}).get("Message", str(e))
+            raise AIClientError(
+                f"Bedrock API error ({error_code}): {error_message}"
+            ) from e
     
     def create_message(
         self,
@@ -205,14 +372,17 @@ class BedrockClient(AIClient):
         """Create a message using AWS Bedrock's API"""
         from botocore.exceptions import ClientError
         
-        # Build request body for Claude on Bedrock
-        body = json.dumps({
-            "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "system": system,
-            "messages": messages
-        })
+        # Nova uses the Converse API
+        if self.model_family == "nova":
+            return self._create_nova_message(messages, system, max_tokens, temperature)
+        
+        # Build request based on model family for invoke_model API
+        if self.model_family == "claude":
+            body = self._build_claude_request(messages, system, max_tokens, temperature)
+        elif self.model_family == "titan":
+            body = self._build_titan_request(messages, system, max_tokens, temperature)
+        else:
+            raise AIClientError(f"Unsupported model family for model: {self.model_id}")
         
         try:
             response = self.client.invoke_model(
@@ -224,14 +394,11 @@ class BedrockClient(AIClient):
             
             result = json.loads(response["body"].read())
             
-            return AIClientResponse(
-                id=result.get("id", f"bedrock-{int(time.time())}"),
-                content=result["content"][0]["text"],
-                model=self.model_id,
-                input_tokens=result["usage"]["input_tokens"],
-                output_tokens=result["usage"]["output_tokens"],
-                stop_reason=result.get("stop_reason", "end_turn")
-            )
+            # Parse response based on model family
+            if self.model_family == "claude":
+                return self._parse_claude_response(result)
+            elif self.model_family == "titan":
+                return self._parse_titan_response(result, body)
             
         except ClientError as e:
             error_code = e.response.get("Error", {}).get("Code", "Unknown")

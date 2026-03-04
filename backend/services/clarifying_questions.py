@@ -6,14 +6,49 @@ class ClarifyingQuestionsService:
 
     MAX_QUESTIONS = 2  # Reduced from 3 to minimize unnecessary questions
 
+    EMERGENCY_KEYWORDS = [
+        "chest pain", "difficulty breathing", "unconscious", "severe bleeding",
+        "stroke", "heart attack", "suicide", "overdose"
+    ]
+
+    PAST_TENSE_MODIFIERS = [
+        "had", "was", "used to", "history of", "previously", "before",
+        "last week", "last month", "last year", "years ago", "months ago",
+        "weeks ago", "days ago", "in the past", "diagnosed with"
+    ]
+
+    URGENCY_BOOSTERS = [
+        "right now", "currently", "sudden", "just started", "can't breathe",
+        "happening now", "911", "help me", "am having", "i'm having",
+        "im having", "having a", "think i'm", "think im", "dying"
+    ]
+
+    @classmethod
+    def _is_likely_active_emergency(cls, text: str) -> bool:
+        """Only flag as emergency when context suggests an active, present crisis."""
+        lower = text.lower()
+        has_keyword = any(kw in lower for kw in cls.EMERGENCY_KEYWORDS)
+        if not has_keyword:
+            return False
+
+        has_past_modifier = any(mod in lower for mod in cls.PAST_TENSE_MODIFIERS)
+        has_urgency = any(urg in lower for urg in cls.URGENCY_BOOSTERS)
+
+        if has_urgency:
+            return True
+        if has_past_modifier:
+            return False
+
+        # Keyword present without strong past-tense or urgency signals:
+        # only trigger for the most unambiguous terms
+        always_urgent = ["unconscious", "suicide", "overdose", "severe bleeding"]
+        return any(kw in lower for kw in always_urgent)
+
     # Only ask critical questions that significantly impact safety and recommendations
     CRITICAL_QUESTIONS = [
         {
             "category": "emergency",
-            "condition": lambda text: any(word in text.lower() for word in [
-                "chest pain", "difficulty breathing", "unconscious", "severe bleeding",
-                "stroke", "heart attack", "suicide", "overdose"
-            ]),
+            "condition": lambda text: ClarifyingQuestionsService._is_likely_active_emergency(text),
             "question": "⚠️ Is this an emergency situation happening right now? If yes, please call 911 or go to the nearest emergency room immediately."
         },
         {
@@ -111,10 +146,11 @@ class ClarifyingQuestionsService:
         conversation_history: List[Dict[str, Any]],
         current_input: str
     ) -> str:
-        """Get all conversation text for analysis"""
+        """Get user-authored conversation text for analysis (excludes assistant messages
+        to prevent the AI's own wording from re-triggering keyword conditions)."""
         texts = [current_input]
         for msg in conversation_history:
-            if isinstance(msg, dict) and "content" in msg:
+            if isinstance(msg, dict) and "content" in msg and msg.get("role") == "user":
                 texts.append(msg["content"])
         return " ".join(texts)
 

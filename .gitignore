@@ -27,6 +27,11 @@ wheels/
 .env
 .env.local
 
+# Credentials (NEVER commit)
+splunk-aws-credentials.txt
+*-credentials.txt
+*.credentials
+
 # Database
 *.db
 *.sqlite
@@ -42,6 +47,7 @@ logs/*.json.*
 # IDE
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 *~

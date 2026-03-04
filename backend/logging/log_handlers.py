@@ -106,18 +106,15 @@ def setup_logging():
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
 
-    # Create governance logger
+    # Create governance logger.
+    # Governance JSON events are written directly to dedicated files
+    # (ai_governance.json, escalations.json, etc.) by GovernanceFileHandler,
+    # NOT through the Python logging framework. The Python logger here is
+    # only used for console output and operational messages (errors/warnings).
+    # Do NOT add a file handler — that causes duplicate events in Splunk.
     governance_logger = logging.getLogger("governance")
     governance_logger.setLevel(log_level)
-
-    if settings.log_to_file:
-        file_handler = RotatingFileHandler(
-            LOGS_DIR / "application.log",
-            maxBytes=settings.log_rotation_size,
-            backupCount=5
-        )
-        file_handler.setFormatter(JSONFormatter())
-        governance_logger.addHandler(file_handler)
+    governance_logger.propagate = False
 
     if settings.log_to_console:
         console_handler = logging.StreamHandler()
