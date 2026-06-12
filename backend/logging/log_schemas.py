@@ -125,7 +125,8 @@ def create_escalation_log(
         "review_status": kwargs.get("review_status", "pending"),
         "reviewer_id": kwargs.get("reviewer_id"),
         "review_notes": kwargs.get("review_notes"),
-        "review_timestamp": kwargs.get("review_timestamp")
+        "review_timestamp": kwargs.get("review_timestamp"),
+        "enduser_id": kwargs.get("enduser_id")
     }
 
 def create_audit_log(
@@ -147,5 +148,6 @@ def create_audit_log(
         "action": action,
         "actor": actor,
         "details": details,
-        "ip_address": kwargs.get("ip_address")
+        "ip_address": kwargs.get("ip_address"),
+        "enduser_id": kwargs.get("enduser_id")
     }

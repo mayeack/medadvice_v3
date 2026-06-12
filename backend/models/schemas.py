@@ -32,9 +32,12 @@ class ChatRequest(BaseModel):
     session_id: str
     message: str
     disclaimer_accepted: bool = False
+    theme: Optional[str] = "medadvice"
     force_pii_injection: Optional[bool] = None  # Override PII injection rate
     force_toxic_injection: Optional[bool] = None  # Override toxic response injection rate
     force_hallucination_injection: Optional[bool] = None  # Override hallucination injection rate
+    ai_defense_review: Optional[bool] = None  # Send prompt to Cisco AI Defense for policy review
+    internal_policy_review: Optional[bool] = None  # Run the built-in internal policy engine (default on)
 
 class ChatResponse(BaseModel):
     session_id: str

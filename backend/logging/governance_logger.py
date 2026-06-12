@@ -42,10 +42,10 @@ class GovernanceLogger:
         request_params: Optional[Dict[str, Any]] = None,
         **kwargs
     ):
-        """Log AI request"""
-        # Extract user_prompt before passing to create_governance_log
+        """Log AI request (console only -- output events contain input_messages
+        so input events are not written to the governance JSON file or DB)."""
         user_prompt = kwargs.pop("user_prompt", None)
-        
+
         _provider_name, _model = _active_provider_info()
         log_data = create_governance_log(
             operation_name=operation_name,
@@ -59,12 +59,12 @@ class GovernanceLogger:
             **(request_params or {}),
             **kwargs
         )
-        
-        # Add user_prompt field if provided (for Splunk field extraction compatibility)
+
         if user_prompt is not None:
             log_data["user_prompt"] = user_prompt
 
-        self._write_log(log_data, "governance")
+        if self.console_logging:
+            logger.info(json.dumps(log_data))
 
     def log_response(
         self,

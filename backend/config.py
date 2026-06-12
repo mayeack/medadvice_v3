@@ -13,6 +13,12 @@ if env_path.exists():
                 key, value = line.split('=', 1)
                 os.environ[key.strip()] = value.strip()
 
+# Use custom CA bundle that includes corporate proxy CAs (e.g. Cisco Secure Access)
+_ca_bundle = Path(__file__).parent.parent / "ca-bundle.pem"
+if _ca_bundle.exists():
+    os.environ.setdefault("SSL_CERT_FILE", str(_ca_bundle))
+    os.environ.setdefault("REQUESTS_CA_BUNDLE", str(_ca_bundle))
+
 class Settings(BaseSettings):
     # AI Provider Selection (supports multiple providers)
     # "anthropic" = Direct Anthropic API (local development)
@@ -61,6 +67,44 @@ class Settings(BaseSettings):
     require_disclaimer_acceptance: bool = True
     max_clarifying_questions: int = 3
 
+    # Cisco AI Defense (Inspection API - runtime policy review of user prompts)
+    # https://developer.cisco.com/docs/ai-defense-inspection/
+    # Master switch: when False the per-request toggle is ignored and no prompt
+    # is ever sent off-box, regardless of the UI toggle state.
+    ai_defense_enabled: bool = False
+    # Inspection API key generated in the AI Defense UI when you create an
+    # "API" connection. Sent in the X-Cisco-AI-Defense-API-Key header. Never
+    # hardcode this - supply it via the environment / .env only.
+    ai_defense_api_key: str = ""
+    # Regional deployment of your AI Defense tenant. Drives the base URL:
+    #   us -> https://us.api.inspect.aidefense.security.cisco.com
+    #   eu -> https://eu.api.inspect.aidefense.security.cisco.com
+    #   ap -> https://ap.api.inspect.aidefense.security.cisco.com
+    ai_defense_region: str = "us"
+    # Optional full base-URL override (takes precedence over region) for private
+    # / hybrid deployments. Example: https://us.api.inspect.aidefense.security.cisco.com
+    ai_defense_endpoint: str = ""
+    # Inspection request timeout in seconds.
+    ai_defense_timeout: float = 10.0
+    # Behavior when the Inspection API errors or returns a malformed response.
+    # False = fail closed (block the prompt) — the documented secure default.
+    # True  = fail open (allow the prompt through).
+    ai_defense_fail_open: bool = False
+    # Comma-separated list of AI Defense guardrails to enable explicitly on every
+    # Inspection API call (sent as config.enabled_rules). Passing rules in the
+    # request applies them directly instead of relying on the SCC-configured
+    # policy, so enforcement is self-contained and direction-independent.
+    # Rule names must match the API enum exactly. Leave empty to fall back to the
+    # connection's UI-configured policy (config: {}).
+    # Valid: Code Detection, Harassment, Hate Speech, PCI, PHI, PII,
+    #        Prompt Injection, Profanity, Sexual Content & Exploitation,
+    #        Social Division & Polarization, Violence & Public Safety Threats
+    ai_defense_enabled_rules: str = (
+        "PII,PHI,PCI,Harassment,Hate Speech,Profanity,"
+        "Sexual Content & Exploitation,Violence & Public Safety Threats,"
+        "Social Division & Polarization,Prompt Injection,Code Detection"
+    )
+
     # Session
     session_timeout_minutes: int = 30
 
@@ -70,6 +114,38 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore"
     )
+
+    @property
+    def ai_defense_chat_inspect_url(self) -> str:
+        """Full URL of the AI Defense Chat Inspection endpoint.
+
+        Grounded on the documented contract:
+        POST {base}/api/v1/inspect/chat where base is the regional host
+        https://{region}.api.inspect.aidefense.security.cisco.com.
+        An explicit ai_defense_endpoint override wins when provided.
+        """
+        base = (self.ai_defense_endpoint or "").strip().rstrip("/")
+        if not base:
+            region = (self.ai_defense_region or "us").strip().lower()
+            base = f"https://{region}.api.inspect.aidefense.security.cisco.com"
+        return f"{base}/api/v1/inspect/chat"
+
+    @property
+    def ai_defense_rule_config(self) -> list[dict]:
+        """Parsed enabled_rules for the Inspection API config block.
+
+        Returns a list of ``{"rule_name": <name>}`` dicts built from
+        ``ai_defense_enabled_rules``. Empty/whitespace entries are dropped. An
+        empty result means callers should send ``config: {}`` and fall back to
+        the connection's UI-configured policy.
+        """
+        return [
+            {"rule_name": name}
+            for name in (
+                part.strip() for part in (self.ai_defense_enabled_rules or "").split(",")
+            )
+            if name
+        ]
 
 # Global settings instance
 settings = Settings()

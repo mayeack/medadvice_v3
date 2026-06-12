@@ -1,0 +1,280 @@
+"""Cisco AI Defense - Chat Inspection API client.
+
+Thin, dependency-light wrapper around the AI Defense runtime Inspection API,
+used to optionally submit user prompts for policy review before the MedAdvice
+recommendation engine calls the model.
+
+Grounded on the published contract:
+  - Endpoint : POST {base}/api/v1/inspect/chat
+               base = https://{region}.api.inspect.aidefense.security.cisco.com
+  - Auth     : X-Cisco-AI-Defense-API-Key: <api key>   (header)
+  - Request  : {"messages": [{"role","content"}, ...], "metadata": {}, "config": {}}
+  - Response : {"is_safe": bool, "severity": "NONE_SEVERITY|LOW|MEDIUM|HIGH",
+                "classifications": ["SECURITY_VIOLATION"|"PRIVACY_VIOLATION"|
+                                    "SAFETY_VIOLATION"|"RELEVANCE_VIOLATION"],
+                "rules": [{"rule_name","classification","entity_types","rule_id"}],
+                "attack_technique": str, "explanation": str, "event_id": str}
+
+References:
+  https://developer.cisco.com/docs/ai-defense-inspection/getting-started/
+  https://developer.cisco.com/docs/ai-defense-inspection/authentication/
+  https://developer.cisco.com/docs/ai-defense-inspection/inspect-conversations/
+  https://developer.cisco.com/docs/ai-defense-inspection/inspectresponse/
+"""
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+import logging
+
+import httpx
+
+from backend.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class InspectionResult:
+    """Normalized outcome of a Chat Inspection call."""
+
+    is_safe: bool = True
+    severity: Optional[str] = None
+    classifications: List[str] = field(default_factory=list)
+    rule_names: List[str] = field(default_factory=list)
+    attack_technique: Optional[str] = None
+    explanation: Optional[str] = None
+    event_id: Optional[str] = None
+    # True when the call could not produce a real verdict (network/HTTP/parse error).
+    errored: bool = False
+    error_message: Optional[str] = None
+
+    @property
+    def should_block(self) -> bool:
+        """Whether the prompt must be blocked.
+
+        - A real verdict of is_safe == False always blocks.
+        - On error, honor the configured fail-open / fail-closed policy.
+        """
+        if self.errored:
+            return not settings.ai_defense_fail_open
+        return not self.is_safe
+
+
+class AIDefenseError(Exception):
+    """Raised for configuration problems (e.g. missing API key)."""
+
+
+class AIDefenseClient:
+    """Synchronous client for the AI Defense Chat Inspection API."""
+
+    def __init__(self) -> None:
+        self._url = settings.ai_defense_chat_inspect_url
+        self._api_key = settings.ai_defense_api_key
+        self._timeout = settings.ai_defense_timeout
+        # Whether this connection accepts an explicit config.enabled_rules list.
+        # The Inspection API returns HTTP 400 ("This connection already has rules
+        # configured...") when the connection (API key) already has an SCC policy
+        # bound to it. We probe lazily on the first call and, if rejected, fall
+        # back to the UI-configured policy (config: {}) for all subsequent calls
+        # so we never pay a wasted round-trip per inspection.
+        self._enabled_rules_supported = True
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(settings.ai_defense_enabled and self._api_key)
+
+    def inspect_prompt(
+        self,
+        user_message: str,
+        *,
+        enduser_id: Optional[str] = None,
+        src_app: str = "medadvice-v3",
+    ) -> InspectionResult:
+        """Submit a single user prompt to AI Defense for policy review.
+
+        An empty ``config`` is sent so AI Defense applies the rules/policies
+        configured in the UI for the connection that owns this API key.
+        """
+        return self._inspect(
+            [{"role": "user", "content": user_message}],
+            enduser_id=enduser_id,
+            src_app=src_app,
+            stage="prompt",
+        )
+
+    def inspect_response(
+        self,
+        user_message: str,
+        assistant_message: str,
+        *,
+        enduser_id: Optional[str] = None,
+        src_app: str = "medadvice-v3",
+    ) -> InspectionResult:
+        """Submit a model response (in conversation context) for policy review.
+
+        The generated output is submitted as the content to inspect so AI
+        Defense can evaluate it for leaked PII, toxic content, etc. and return
+        a verdict the caller can use to withhold the response.
+
+        NOTE on roles (verified against the live connection): this connection's
+        SCC policy enforces guardrails only on the *prompt* (user) direction.
+        Identical PII/Harassment content carried in an assistant-role message —
+        even within full conversation context — is returned is_safe=True and is
+        NOT flagged. Because this connection already has an SCC policy bound, the
+        Inspection API also rejects an explicit config.enabled_rules override
+        (HTTP 400), so we cannot force response-direction enforcement that way.
+        Therefore the model output is submitted as user-role content (the
+        original prompt is included only as preceding context) to make the
+        response genuinely subject to the PII/Toxicity guardrails. If a
+        connection's policy is configured to enforce the response/output
+        direction, this can be switched back to an assistant-role message.
+        """
+        return self._inspect(
+            [
+                {"role": "user", "content": user_message},
+                {"role": "user", "content": assistant_message},
+            ],
+            enduser_id=enduser_id,
+            src_app=src_app,
+            stage="response",
+        )
+
+    def _inspect(
+        self,
+        messages: List[Dict[str, str]],
+        *,
+        enduser_id: Optional[str] = None,
+        src_app: str = "medadvice-v3",
+        stage: str = "prompt",
+    ) -> InspectionResult:
+        """Shared Chat Inspection call for both prompt and response review."""
+        if not self.is_configured:
+            raise AIDefenseError(
+                "AI Defense is not configured (set AI_DEFENSE_ENABLED=True and "
+                "AI_DEFENSE_API_KEY)."
+            )
+
+        # metadata is optional per the contract; we pass non-sensitive context
+        # (caller-supplied user notion + source app + timestamp + stage) to aid
+        # triage in the AI Defense Events screen. No secrets are included.
+        metadata: Dict[str, Any] = {
+            "src_app": src_app,
+            "stage": stage,
+            "created_at": datetime.utcnow().isoformat() + "Z",
+        }
+        if enduser_id:
+            metadata["user"] = enduser_id
+
+        # Build the inspection config. When ai_defense_enabled_rules is set, the
+        # rules are passed explicitly so AI Defense applies them directly on this
+        # call (self-contained, direction-independent) rather than relying on the
+        # SCC-configured policy. An empty list — or a connection that already has
+        # an SCC policy bound (see _enabled_rules_supported) — defers to the
+        # connection's UI-configured policy (config: {}).
+        rules = settings.ai_defense_rule_config
+        send_enabled_rules = bool(rules) and self._enabled_rules_supported
+        config: Dict[str, Any] = {"enabled_rules": rules} if send_enabled_rules else {}
+
+        headers = {
+            "X-Cisco-AI-Defense-API-Key": self._api_key,
+            "Content-Type": "application/json",
+            "accept": "application/json",
+        }
+
+        result = self._post(messages, metadata, config, headers)
+
+        # If the connection rejects enabled_rules because it already has an SCC
+        # policy, remember that and retry once deferring to the UI policy. This
+        # keeps the client working on connections both with and without rules.
+        if (
+            result.errored
+            and send_enabled_rules
+            and result.error_message
+            and "already has rules configured" in result.error_message.lower()
+        ):
+            logger.info(
+                "AI Defense connection has an SCC policy bound; disabling "
+                "config.enabled_rules and deferring to the UI-configured policy."
+            )
+            self._enabled_rules_supported = False
+            result = self._post(messages, metadata, {}, headers)
+
+        return result
+
+    def _post(
+        self,
+        messages: List[Dict[str, str]],
+        metadata: Dict[str, Any],
+        config: Dict[str, Any],
+        headers: Dict[str, str],
+    ) -> InspectionResult:
+        """Single Chat Inspection HTTP attempt, normalized to InspectionResult."""
+        payload = {
+            "messages": messages,
+            "metadata": metadata,
+            "config": config,
+        }
+        try:
+            response = httpx.post(
+                self._url,
+                json=payload,
+                headers=headers,
+                timeout=self._timeout,
+            )
+            response.raise_for_status()
+            data = response.json()
+        except httpx.HTTPStatusError as exc:
+            # 400 bad request, 401 unauthorized, 500 etc. carry a {"message": ...} body.
+            detail = self._safe_error_detail(exc.response)
+            logger.warning(
+                "AI Defense inspection HTTP %s: %s",
+                exc.response.status_code,
+                detail,
+            )
+            return InspectionResult(
+                errored=True,
+                error_message=f"HTTP {exc.response.status_code}: {detail}",
+            )
+        except (httpx.HTTPError, ValueError) as exc:
+            # Network/timeout errors and JSON decode errors.
+            logger.warning("AI Defense inspection failed: %s", exc)
+            return InspectionResult(errored=True, error_message=str(exc))
+
+        return self._parse_response(data)
+
+    @staticmethod
+    def _parse_response(data: Dict[str, Any]) -> InspectionResult:
+        rules = data.get("rules") or []
+        rule_names = [
+            r.get("rule_name")
+            for r in rules
+            if isinstance(r, dict) and r.get("rule_name")
+        ]
+        return InspectionResult(
+            # Default to safe only if the field is explicitly present; treat a
+            # missing is_safe as a malformed response (errored) for safety.
+            is_safe=bool(data.get("is_safe", True)),
+            severity=data.get("severity"),
+            classifications=list(data.get("classifications") or []),
+            rule_names=rule_names,
+            attack_technique=data.get("attack_technique"),
+            explanation=data.get("explanation"),
+            event_id=data.get("event_id"),
+            errored="is_safe" not in data,
+            error_message=None if "is_safe" in data else "Malformed response: missing is_safe",
+        )
+
+    @staticmethod
+    def _safe_error_detail(response: httpx.Response) -> str:
+        try:
+            body = response.json()
+            if isinstance(body, dict) and "message" in body:
+                return str(body["message"])
+        except ValueError:
+            pass
+        return response.text[:200]
+
+
+# Module-level singleton, mirrors other services in this package.
+ai_defense_client = AIDefenseClient()

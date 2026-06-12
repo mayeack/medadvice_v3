@@ -48,8 +48,36 @@ class EscalationRules:
         r"\bprescription\b"
     ]
 
+    POLICY_BLOCK_PATTERNS = [
+        "kill myself", "end my life", "suicide", "suicidal",
+        "self-harm", "hurt myself", "don't want to live",
+        "want to die", "how to die", "ways to die",
+        "overdose", "poison myself",
+    ]
+
+    POLICY_BLOCK_RESPONSE = (
+        "If you or someone you know is in crisis, please reach out for immediate help:\n\n"
+        "- **988 Suicide & Crisis Lifeline**: Call or text **988** (available 24/7)\n"
+        "- **Emergency Services**: Call **911**\n"
+        "- **Crisis Text Line**: Text **HELLO** to **741741**\n\n"
+        "You are not alone, and trained counselors are ready to help right now.\n\n"
+        "*This message was generated automatically because your input matched "
+        "our safety policy. No AI medical advice was provided for this request.*"
+    )
+
     def __init__(self):
         self.escalation_reasons = []
+
+    def check_policy_block(self, user_input: str) -> Tuple[bool, List[str]]:
+        """
+        Pre-AI check for content that must be hard-blocked rather than
+        simply escalated.  Returns (should_block, matched_reasons).
+        """
+        text = user_input.lower()
+        matched = [p for p in self.POLICY_BLOCK_PATTERNS if p in text]
+        if matched:
+            return True, [f"Policy block: self-harm content detected ({', '.join(matched)})"]
+        return False, []
 
     def should_escalate(
         self,

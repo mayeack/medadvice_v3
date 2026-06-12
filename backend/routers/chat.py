@@ -11,6 +11,7 @@ from backend.models.db_models import Conversation
 from backend.database.db import get_db
 from backend.services.recommendation_engine import RecommendationEngine
 from backend.services.auto_prompter import auto_prompter
+from backend.services.enduser_pool import pick_enduser_id
 from backend.logging.governance_logger import governance_logger
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -43,7 +44,8 @@ async def send_message(
                 "created_at": existing_conversation.created_at,
                 "messages": existing_conversation.messages or [],
                 "disclaimer_accepted": existing_conversation.disclaimer_accepted,
-                "escalated": existing_conversation.escalated
+                "escalated": existing_conversation.escalated,
+                "enduser_id": pick_enduser_id()
             }
         else:
             # New session - require disclaimer
@@ -57,7 +59,8 @@ async def send_message(
                 "created_at": datetime.utcnow(),
                 "messages": [],
                 "disclaimer_accepted": True,
-                "escalated": False
+                "escalated": False,
+                "enduser_id": pick_enduser_id()
             }
 
             # Create conversation in database
@@ -79,7 +82,8 @@ async def send_message(
                     "disclaimer_accepted": True,
                     "client_address": request.client.host
                 },
-                ip_address=request.client.host
+                ip_address=request.client.host,
+                enduser_id=sessions[session_id]["enduser_id"]
             )
 
     session = sessions[session_id]
@@ -99,9 +103,13 @@ async def send_message(
         user_message=chat_request.message,
         conversation_history=session["messages"],
         client_address=request.client.host,
+        theme=chat_request.theme,
         force_pii_injection=chat_request.force_pii_injection,
         force_toxic_injection=chat_request.force_toxic_injection,
-        force_hallucination_injection=chat_request.force_hallucination_injection
+        force_hallucination_injection=chat_request.force_hallucination_injection,
+        ai_defense_review=chat_request.ai_defense_review,
+        internal_policy_review=chat_request.internal_policy_review,
+        enduser_id=session.get("enduser_id")
     )
 
     # Add assistant message to session
