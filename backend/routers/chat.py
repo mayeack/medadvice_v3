@@ -2,10 +2,12 @@ from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import Dict, Any
+import logging
 import uuid
 import json
 from datetime import datetime
 
+from backend.config import settings
 from backend.models.schemas import ChatRequest, ChatResponse, MessageRole, MessageType
 from backend.models.db_models import Conversation
 from backend.database.db import get_db
@@ -14,11 +16,40 @@ from backend.services.auto_prompter import auto_prompter
 from backend.services.enduser_pool import pick_enduser_id
 from backend.logging.governance_logger import governance_logger
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 recommendation_engine = RecommendationEngine()
 
 # In-memory session store (in production, use Redis or similar)
 sessions: Dict[str, Dict[str, Any]] = {}
+
+
+def _dispatch_chat_turn(**kwargs: Any) -> Dict[str, Any]:
+    """Route a chat turn to the agentic LangGraph workflow or the legacy engine.
+
+    When ``settings.use_agentic_engine`` is enabled the request is served by the
+    supervisor-routed multi-agent graph (backend/agents). If the agentic
+    dependencies are missing or the graph cannot be built, we transparently fall
+    back to ``RecommendationEngine.process_message`` so the service stays up.
+    Both paths return an identically-shaped dict and emit the same governance
+    events, so this switch is invisible to the rest of the request flow.
+    """
+    if settings.use_agentic_engine:
+        try:
+            from backend.agents.graph import run_turn
+
+            return run_turn(**kwargs)
+        except ImportError as exc:
+            logger.warning(
+                "Agentic engine unavailable (%s); using legacy RecommendationEngine",
+                exc,
+            )
+        except Exception:  # noqa: BLE001 - never fail the request on build issues
+            logger.exception(
+                "Agentic engine failed to run; using legacy RecommendationEngine"
+            )
+    return recommendation_engine.process_message(**kwargs)
 
 @router.post("/message", response_model=ChatResponse)
 async def send_message(
@@ -97,8 +128,8 @@ async def send_message(
     }
     session["messages"].append(user_message)
 
-    # Process message
-    response_data = recommendation_engine.process_message(
+    # Process message (agentic LangGraph workflow, with legacy fallback)
+    response_data = _dispatch_chat_turn(
         session_id=session_id,
         user_message=chat_request.message,
         conversation_history=session["messages"],

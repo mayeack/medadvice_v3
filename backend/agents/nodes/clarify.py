@@ -1,0 +1,57 @@
+"""Intake / clarifying-question agent node.
+
+Rule-based pre-LLM specialist that decides whether more information is needed
+before generating a recommendation. Conversational themes (e.g. telecom) handle
+follow-ups in-prompt, so they skip this node.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict
+
+from backend.agents.nodes.shared import clarifying_service
+from backend.logging.governance_logger import governance_logger
+from backend.models.schemas import MessageType
+from backend.telemetry import otel
+
+
+def intake_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    # Conversational themes self-manage follow-up questions in-prompt.
+    if state.get("conversational"):
+        return {}
+
+    conversation_history = state.get("conversation_history", [])
+    user_message = state["user_message"]
+
+    if not clarifying_service.should_ask_questions(conversation_history, user_message):
+        return {}
+
+    with otel.agent_span("intake_agent", theme=state.get("theme")):
+        next_question = clarifying_service.get_next_question(
+            conversation_history, user_message
+        )
+        if not next_question:
+            return {}
+
+        governance_logger.log_decision(
+            session_id=state["session_id"],
+            request_id=state["request_id"],
+            decision_type="clarifying_question",
+            decision_value=next_question["category"],
+            rationale=f"Missing {next_question['category']} information",
+            enduser_id=state.get("enduser_id"),
+        )
+
+    return {
+        "terminal": True,
+        "result": {
+            "message": next_question["question"],
+            "type": MessageType.CLARIFYING_QUESTION,
+            "severity": None,
+            "escalated": False,
+            "metadata": {
+                "question_category": next_question["category"],
+                "priority": next_question["priority"],
+            },
+        },
+    }

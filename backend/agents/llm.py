@@ -1,0 +1,225 @@
+"""LangChain chat-model factory (workshop section 4.7 "LLM Creation").
+
+Replaces the bespoke ``backend.services.ai_client`` provider abstraction with
+LangChain chat models so the agentic graph speaks the LangChain message
+abstractions (``SystemMessage`` / ``HumanMessage`` / ``AIMessage``) end-to-end.
+
+The provider is selected from the existing ``settings.ai_provider`` so no new
+configuration is required:
+
+    anthropic -> ChatAnthropic            (local development)
+    bedrock   -> ChatBedrockConverse      (AWS production)
+    openai    -> ChatOpenAI               (OpenAI-compatible APIs)
+
+``invoke_chat`` normalizes the LangChain response into a small dataclass with the
+same fields the governance contract needs (id, model, token usage, stop reason),
+so the governance node can emit the exact same Splunk schema as before.
+
+LangChain is imported lazily inside the factory so importing this module never
+fails when the optional agentic dependencies are not installed.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class NormalizedLLMResponse:
+    """Provider-agnostic view of a chat completion.
+
+    Field names intentionally mirror ``ai_client.AIClientResponse`` so the
+    governance logging stays byte-compatible with the legacy pipeline.
+    """
+
+    id: str
+    content: str
+    model: str
+    input_tokens: int
+    output_tokens: int
+    stop_reason: str
+
+    @property
+    def total_tokens(self) -> int:
+        return (self.input_tokens or 0) + (self.output_tokens or 0)
+
+
+class ChatModelError(Exception):
+    """Raised when a chat model cannot be created or invoked."""
+
+
+# Cache the constructed model per (provider, model) so we don't rebuild a client
+# on every request.
+_MODEL_CACHE: Dict[str, Any] = {}
+
+
+def get_chat_model(settings, *, max_tokens: int = 2048, temperature: float = 0.7):
+    """Return a LangChain chat model for the configured provider.
+
+    CA-bundle / proxy handling is inherited from process environment variables
+    (``SSL_CERT_FILE`` / ``REQUESTS_CA_BUNDLE``) that ``backend.config`` sets at
+    import time, so the underlying SDK HTTP clients pick them up automatically.
+    """
+    provider = (settings.ai_provider or "anthropic").lower()
+    cache_key = f"{provider}:{max_tokens}:{temperature}"
+    cached = _MODEL_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    try:
+        if provider == "anthropic":
+            from langchain_anthropic import ChatAnthropic
+
+            model = ChatAnthropic(
+                model=settings.anthropic_model,
+                api_key=settings.anthropic_api_key,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+        elif provider == "bedrock":
+            from langchain_aws import ChatBedrockConverse
+
+            model = ChatBedrockConverse(
+                model=settings.bedrock_model_id,
+                region_name=settings.aws_region,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+        elif provider == "openai":
+            from langchain_openai import ChatOpenAI
+
+            model = ChatOpenAI(
+                model=settings.openai_model,
+                api_key=settings.openai_api_key,
+                base_url=settings.openai_base_url,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+        else:
+            raise ChatModelError(
+                f"Unknown AI provider: {provider}. "
+                "Valid options are 'anthropic', 'bedrock', or 'openai'."
+            )
+    except ImportError as exc:  # pragma: no cover - depends on optional deps
+        raise ChatModelError(
+            f"LangChain integration for provider '{provider}' is not installed: {exc}"
+        ) from exc
+
+    _MODEL_CACHE[cache_key] = model
+    logger.info("Initialized LangChain chat model for provider: %s", provider)
+    return model
+
+
+def _to_langchain_messages(system: str, messages: List[Dict[str, Any]]):
+    """Convert a system prompt + role/content history into LangChain messages."""
+    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+    lc_messages: List[Any] = []
+    if system:
+        lc_messages.append(SystemMessage(content=system))
+
+    for msg in messages:
+        role = msg.get("role")
+        role = role.value if hasattr(role, "value") else role
+        content = msg.get("content", "")
+        if role == "assistant":
+            lc_messages.append(AIMessage(content=content))
+        elif role in ("user", "system"):
+            # Treat any non-assistant turn as a human turn for the model input.
+            lc_messages.append(HumanMessage(content=content))
+    return lc_messages
+
+
+def _extract_text(ai_message) -> str:
+    """Pull plain text out of a LangChain AIMessage (content may be a list)."""
+    content = getattr(ai_message, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: List[str] = []
+        for block in content:
+            if isinstance(block, dict):
+                parts.append(block.get("text", "") or "")
+            else:
+                parts.append(str(block))
+        return "".join(parts)
+    return str(content)
+
+
+def _extract_usage(ai_message) -> Dict[str, int]:
+    usage = getattr(ai_message, "usage_metadata", None) or {}
+    input_tokens = int(usage.get("input_tokens", 0) or 0)
+    output_tokens = int(usage.get("output_tokens", 0) or 0)
+    if not (input_tokens or output_tokens):
+        # Fall back to provider response metadata shapes.
+        meta = getattr(ai_message, "response_metadata", {}) or {}
+        token_usage = meta.get("token_usage") or meta.get("usage") or {}
+        input_tokens = int(
+            token_usage.get("prompt_tokens", token_usage.get("input_tokens", 0)) or 0
+        )
+        output_tokens = int(
+            token_usage.get("completion_tokens", token_usage.get("output_tokens", 0)) or 0
+        )
+    return {"input_tokens": input_tokens, "output_tokens": output_tokens}
+
+
+def _extract_metadata(ai_message, fallback_model: str) -> Dict[str, str]:
+    meta = getattr(ai_message, "response_metadata", {}) or {}
+    response_id = (
+        getattr(ai_message, "id", None)
+        or meta.get("id")
+        or "langchain-response"
+    )
+    model = meta.get("model_name") or meta.get("model") or fallback_model
+    stop_reason = (
+        meta.get("stop_reason")
+        or meta.get("finish_reason")
+        or "end_turn"
+    )
+    return {"id": str(response_id), "model": str(model), "stop_reason": str(stop_reason)}
+
+
+def invoke_chat(
+    settings,
+    *,
+    system: str,
+    messages: List[Dict[str, Any]],
+    max_tokens: int = 2048,
+    temperature: float = 0.7,
+    fallback_model: Optional[str] = None,
+) -> NormalizedLLMResponse:
+    """Invoke the configured chat model and normalize the response.
+
+    Raises :class:`ChatModelError` on any failure so callers can map it onto the
+    existing error-handling / governance error event.
+    """
+    model = get_chat_model(settings, max_tokens=max_tokens, temperature=temperature)
+    lc_messages = _to_langchain_messages(system, messages)
+
+    try:
+        ai_message = model.invoke(lc_messages)
+    except Exception as exc:  # noqa: BLE001 - normalize all provider errors
+        raise ChatModelError(f"Chat model invocation failed: {exc}") from exc
+
+    fallback = fallback_model or (
+        settings.anthropic_model
+        if settings.ai_provider == "anthropic"
+        else settings.bedrock_model_id
+        if settings.ai_provider == "bedrock"
+        else settings.openai_model
+    )
+    usage = _extract_usage(ai_message)
+    meta = _extract_metadata(ai_message, fallback)
+
+    return NormalizedLLMResponse(
+        id=meta["id"],
+        content=_extract_text(ai_message),
+        model=meta["model"],
+        input_tokens=usage["input_tokens"],
+        output_tokens=usage["output_tokens"],
+        stop_reason=meta["stop_reason"],
+    )

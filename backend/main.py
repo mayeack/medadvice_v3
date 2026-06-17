@@ -10,10 +10,15 @@ from backend.database.db import init_db
 from backend.logging.log_handlers import setup_logging
 from backend.middleware.request_logging import RequestLoggingMiddleware
 from backend.routers import chat, admin
+from backend.telemetry import otel
 
 # Setup logging
 setup_logging()
 logger = logging.getLogger(__name__)
+
+# Initialize code-based OpenTelemetry GenAI instrumentation (no-op unless
+# settings.otel_enabled). Must run before the agentic graph is first invoked.
+otel.init_telemetry(settings)
 
 # Create FastAPI app
 app = FastAPI(

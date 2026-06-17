@@ -108,6 +108,28 @@ class Settings(BaseSettings):
     # Session
     session_timeout_minutes: int = 30
 
+    # -------------------------------------------------------------------------
+    # Agentic orchestration (LangChain + LangGraph)
+    # -------------------------------------------------------------------------
+    # When True, /api/chat/message is served by the LangGraph multi-agent
+    # workflow (backend/agents). When the agentic dependencies are unavailable
+    # or the graph fails to build, the router transparently falls back to the
+    # legacy RecommendationEngine so the service keeps running.
+    use_agentic_engine: bool = True
+    # Name promoted to the OTel GenAI Workflow span (AI Agent Monitoring groups
+    # traces by this workflow name in Splunk Observability Cloud).
+    agentic_workflow_name: str = "medadvice_multi_agent"
+
+    # -------------------------------------------------------------------------
+    # Agentic observability (OpenTelemetry GenAI -> Splunk Observability Cloud)
+    # -------------------------------------------------------------------------
+    # Master switch for code-based GenAI tracing. Export endpoint, headers, and
+    # protocol are read from the standard OTEL_* environment variables
+    # (e.g. OTEL_EXPORTER_OTLP_ENDPOINT). When no endpoint is configured and
+    # debug is on, spans are printed to the console.
+    otel_enabled: bool = False
+    otel_service_name: str = "medadvice-v3"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

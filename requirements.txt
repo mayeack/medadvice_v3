@@ -28,3 +28,32 @@ python-multipart==0.0.6
 sse-starlette==1.8.2
 websockets==12.0
 httpx==0.26.0
+
+# =============================================================================
+# Agentic orchestration (LangChain + LangGraph)
+# =============================================================================
+# Multi-agent supervisor/router + per-theme decomposed subgraphs live in
+# backend/agents/. These power the rebuilt orchestration that replaces the
+# hand-rolled RecommendationEngine pipeline.
+langchain>=0.3.7
+langgraph>=0.2.45
+langchain-anthropic>=0.3.0     # ChatAnthropic (local development)
+langchain-aws>=0.2.4           # ChatBedrockConverse (AWS production)
+langchain-openai>=0.2.8        # ChatOpenAI (OpenAI-compatible APIs)
+
+# =============================================================================
+# Agentic observability (OpenTelemetry GenAI -> Splunk Observability Cloud)
+# =============================================================================
+# Code-based GenAI instrumentation: Workflow / AgentInvocation / LLMInvocation
+# spans exported over OTLP. Splunk requires OTel core >= 1.38.0.
+opentelemetry-sdk>=1.38.0
+opentelemetry-exporter-otlp>=1.38.0
+opentelemetry-semantic-conventions>=0.59b0
+# Optional richer GenAI emission (Workflow/AgentInvocation/LLMInvocation data
+# types + TelemetryHandler). Not on all package indexes; the telemetry layer in
+# backend/telemetry/otel.py falls back to plain OTel spans carrying gen_ai.*
+# semantic-convention attributes when it is absent. Install if available:
+#   pip install opentelemetry-util-genai
+# Optional cross-check via zero-code LangChain auto-instrumentation:
+#   pip install splunk-otel-instrumentation-langchain
+#   opentelemetry-instrument python -m backend.main
