@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8001
 
+    # Public access gate. When set, every request (except /health) must send
+    # this value as the HTTP Basic Auth password. Empty = gate disabled (local
+    # dev). Supply via .env only — never hardcode.
+    access_key: str = ""
+
     # Database (SQLite for local, PostgreSQL for AWS)
     database_url: str = "sqlite:///./medadvice.db"
 

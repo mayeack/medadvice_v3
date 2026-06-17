@@ -1,7 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 import logging
 from pathlib import Path
 
@@ -9,7 +9,8 @@ from backend.config import settings
 from backend.database.db import init_db
 from backend.logging.log_handlers import setup_logging
 from backend.middleware.request_logging import RequestLoggingMiddleware
-from backend.routers import chat, admin
+from backend.middleware.access_key import AccessKeyMiddleware
+from backend.routers import chat, admin, auth
 from backend.telemetry import otel
 
 # Setup logging
@@ -37,12 +38,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Access-key gate (Basic Auth) — added before request logging so logging stays
+# outermost and still records rejected (401) requests. No-op unless ACCESS_KEY is set.
+app.add_middleware(AccessKeyMiddleware)
+
 # Request logging middleware
 app.add_middleware(RequestLoggingMiddleware)
 
 # Include routers
 app.include_router(chat.router)
 app.include_router(admin.router)
+app.include_router(auth.router)
 
 # Initialize database on startup
 @app.on_event("startup")
@@ -75,7 +81,10 @@ async def health_check():
 
 # Root endpoint
 @app.get("/")
-async def root():
+async def root(request: Request):
+    # Browsers get the styled app; API clients get the JSON index.
+    if "text/html" in request.headers.get("accept", ""):
+        return RedirectResponse(url="/app")
     return {
         "app": settings.app_name,
         "version": settings.app_version,
@@ -123,5 +132,8 @@ if __name__ == "__main__":
         host=settings.host,
         port=settings.port,
         reload=settings.debug,
+        # Don't reload on data/log churn (the app writes these as it serves),
+        # otherwise the dev reloader restarts after almost every request.
+        reload_excludes=["*.db", "*.db-journal", "*.db-wal", "*.log", "*.json"],
         log_level=settings.log_level.lower()
     )

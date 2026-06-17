@@ -59,6 +59,42 @@ Once running, open your browser:
 | **Governance** | http://localhost:8001/governance-ui | AI interaction logs |
 | **API Docs** | http://localhost:8001/docs | Interactive API documentation |
 
+## Public Access (optional)
+
+Expose the app on the public internet behind a single access key — no cloud
+deploy; the local SQLite database and `.env` stay where they are.
+
+### Step 1: Set an access key
+Add a shared secret to `.env`. Every request (except `/health`) then requires it
+as the HTTP Basic Auth password — one key gates both the web UIs and the API.
+```env
+# Generate one with: openssl rand -hex 24
+ACCESS_KEY=your-long-random-secret
+```
+Leave `ACCESS_KEY` empty/unset to keep the app open for local development.
+
+### Step 2: Start the server, then the tunnel
+```bash
+brew install cloudflared   # one-time prerequisite
+
+./run.sh                   # terminal 1 — the app on :8001
+./tunnel.sh                # terminal 2 — public HTTPS tunnel
+```
+`tunnel.sh` prints a `https://<random>.trycloudflare.com` URL (a new one each
+run). Cloudflare terminates TLS, so the access key travels encrypted.
+
+### Step 3: Open the URL
+Browse to the printed URL; you'll land on a **login page** — enter the access
+code to continue (the browser can offer to save it). For scripts/API clients,
+HTTP Basic Auth still works:
+```bash
+curl -u x:your-long-random-secret https://<random>.trycloudflare.com/health
+```
+
+> ⚠️ Anyone with both the URL and the key can reach the admin/governance
+> dashboards and drive the AI. Share them only with people you trust; rotate by
+> changing `ACCESS_KEY` and restarting.
+
 ## First Steps
 
 1. **Open Chat Interface**: http://localhost:8001/app
