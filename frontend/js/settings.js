@@ -1,5 +1,8 @@
 // Settings page: local log directory + Splunk HEC destinations.
 
+let _dests = [];          // last-loaded destinations (cached for tab switching)
+let activeDestId = null;  // currently-selected destination tab
+
 function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -45,19 +48,43 @@ function setLogsStatus(msg, ok) {
 async function loadDestinations() {
   try {
     const d = await api('GET', '/api/hec/destinations');
-    renderDestinations(d.destinations || []);
+    _dests = d.destinations || [];
+    renderDestinations();
   } catch (e) {
     document.getElementById('destinations').innerHTML =
       `<p class="text-red-600 text-sm">Failed to load destinations: ${esc(e.message)}</p>`;
   }
 }
-function renderDestinations(dests) {
+function renderDestinations() {
   const box = document.getElementById('destinations');
-  if (!dests.length) {
+  if (!_dests.length) {
     box.innerHTML = `<p class="text-gray-400 text-sm">No HEC destinations yet. Click “+ Add destination”.</p>`;
     return;
   }
-  box.innerHTML = dests.map(cardHTML).join('');
+  if (!activeDestId || !_dests.some(d => d.id === activeDestId)) activeDestId = _dests[0].id;
+  const tabs = _dests.map(tabButton).join('');
+  const active = _dests.find(d => d.id === activeDestId);
+  box.innerHTML =
+    `<div class="flex flex-wrap items-end gap-1 border-b border-gray-200 mb-4">${tabs}</div>` +
+    cardHTML(active);
+}
+function tabButton(d) {
+  const on = d.id === activeDestId;
+  const dot = `<span class="inline-block w-2 h-2 rounded-full mr-2 align-middle ${d.enabled ? 'bg-green-500' : 'bg-gray-300'}"></span>`;
+  const cls = on
+    ? 'px-4 py-2 text-sm font-semibold text-blue-600 bg-white border border-gray-200 border-b-0 rounded-t-lg -mb-px'
+    : 'px-4 py-2 text-sm text-gray-500 hover:text-gray-800';
+  return `<button type="button" onclick="selectTab('${attr(d.id)}')" class="${cls}">${dot}${esc(d.name || d.id)}</button>`;
+}
+function selectTab(id) {
+  // preserve in-memory edits of the current tab when switching (Save persists to server)
+  const card = cardFor(activeDestId);
+  if (card) {
+    const cur = _dests.find(d => d.id === activeDestId);
+    if (cur) Object.assign(cur, collectDest(card));
+  }
+  activeDestId = id;
+  renderDestinations();
 }
 function field(label, f, value, type) {
   return `<div>
@@ -164,8 +191,11 @@ async function deleteDestination(id) {
   catch (e) { setResult(id, 'Error: ' + e.message, false); }
 }
 async function addDestination() {
-  try { await api('POST', '/api/hec/destinations', { name: 'New destination' }); await loadDestinations(); }
-  catch (e) { alert('Could not add destination: ' + e.message); }
+  try {
+    const rec = await api('POST', '/api/hec/destinations', { name: 'New destination' });
+    activeDestId = rec.id;            // open the new tab
+    await loadDestinations();
+  } catch (e) { alert('Could not add destination: ' + e.message); }
 }
 
 // -------------------------------------------------------------------- stats
