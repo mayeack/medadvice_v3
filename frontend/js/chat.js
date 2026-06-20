@@ -40,11 +40,11 @@ const THEMES = {
         showBanner: true,
         piiLabel: 'Include Synthetic PII/PHI in Responses',
         errorFallback: 'Sorry, I encountered an error. Please try again or seek immediate medical care if urgent.',
-        primary: '#2563eb',
-        primaryHover: '#1d4ed8',
-        primaryLight: '#dbeafe',
-        primaryRing: '#93bbfd',
-        tailwindColor: 'blue',
+        primary: '#7c3aed',
+        primaryHover: '#6d28d9',
+        primaryLight: '#ede9fe',
+        primaryRing: '#c4b5fd',
+        tailwindColor: 'violet',
     },
     taxadvice: {
         key: 'taxadvice',
@@ -219,7 +219,7 @@ const THEMES = {
 };
 
 // Track the previous tailwind color for class swaps
-let prevTailwindColor = 'blue';
+let prevTailwindColor = 'violet';
 
 function applyTheme(themeKey) {
     const theme = THEMES[themeKey];

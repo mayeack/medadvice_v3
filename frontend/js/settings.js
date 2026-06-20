@@ -111,7 +111,7 @@ function tabButton(d) {
   const on = d.id === activeDestId;
   const dot = `<span class="inline-block w-2 h-2 rounded-full mr-2 align-middle ${d.enabled ? 'bg-green-500' : 'bg-gray-300'}"></span>`;
   const cls = on
-    ? 'px-4 py-2 text-sm font-semibold text-blue-600 bg-white border border-gray-200 border-b-0 rounded-t-lg -mb-px'
+    ? 'px-4 py-2 text-sm font-semibold text-violet-600 bg-white border border-gray-200 border-b-0 rounded-t-lg -mb-px'
     : 'px-4 py-2 text-sm text-gray-500 hover:text-gray-800';
   return `<button type="button" onclick="selectTab('${attr(d.id)}')" class="${cls}">${dot}${esc(d.name || d.id)}</button>`;
 }
@@ -129,13 +129,13 @@ function field(label, f, value, type) {
   return `<div>
     <label class="block text-xs font-semibold text-gray-600 mb-1">${label}</label>
     <input data-field="${f}" type="${type || 'text'}" value="${attr(value)}"
-      class="w-full p-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"></div>`;
+      class="w-full p-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"></div>`;
 }
 function num(label, f, value) {
   return `<div>
     <label class="block text-xs font-semibold text-gray-600 mb-1">${label}</label>
     <input data-field="${f}" type="number" value="${attr(value)}"
-      class="w-full p-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"></div>`;
+      class="w-full p-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"></div>`;
 }
 function cardHTML(d) {
   const id = d.id;
@@ -145,7 +145,7 @@ function cardHTML(d) {
   return `<div class="border border-gray-200 rounded-lg p-4" data-dest="${attr(id)}">
     <div class="flex items-center justify-between mb-3 gap-3">
       <input data-field="name" value="${attr(d.name || '')}"
-        class="font-semibold text-gray-800 text-lg flex-1 p-1 border border-transparent hover:border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+        class="font-semibold text-gray-800 text-lg flex-1 p-1 border border-transparent hover:border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-violet-500">
       <label class="flex items-center gap-2 text-sm text-gray-700 whitespace-nowrap">
         <input data-field="enabled" type="checkbox" ${d.enabled ? 'checked' : ''}> Enabled</label>
     </div>
@@ -154,7 +154,7 @@ function cardHTML(d) {
       <div>
         <label class="block text-xs font-semibold text-gray-600 mb-1">HEC token</label>
         <input data-field="token" type="password" placeholder="${attr(tokenPh)}"
-          class="w-full p-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"></div>
+          class="w-full p-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"></div>
       ${field('Index', 'index', d.index || '')}
       ${field('Sourcetype', 'sourcetype', d.sourcetype || '')}
       ${field('Source', 'source', d.source || '')}
@@ -173,7 +173,7 @@ function cardHTML(d) {
       </div>
     </details>
     <div class="flex items-center gap-2">
-      <button onclick="saveDestination('${attr(id)}')" class="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">Save</button>
+      <button onclick="saveDestination('${attr(id)}')" class="px-3 py-1.5 bg-violet-600 text-white rounded text-sm hover:bg-violet-700">Save</button>
       <button onclick="testDestination('${attr(id)}')" class="px-3 py-1.5 bg-slate-600 text-white rounded text-sm hover:bg-slate-700">Test connection</button>
       <button onclick="deleteDestination('${attr(id)}')" class="px-3 py-1.5 bg-red-100 text-red-700 rounded text-sm hover:bg-red-200">Delete</button>
       <span data-result class="text-sm ml-2"></span>

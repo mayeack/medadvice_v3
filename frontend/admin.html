@@ -5,17 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Governance — Admin Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter','ui-sans-serif','system-ui','-apple-system','Segoe UI','Roboto','Helvetica','Arial','sans-serif'] } } } };</script>
+    <style>body{font-family:'Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}</style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
-<body class="bg-gray-100">
+<body class="bg-gray-50">
     <div class="container mx-auto p-4">
         <!-- Header -->
         <div class="bg-white shadow-lg rounded-lg p-6 mb-4">
-            <h1 class="text-3xl font-bold text-blue-600 mb-2">AI Governance — Admin Dashboard</h1>
+            <h1 class="text-3xl font-bold text-violet-600 mb-2">AI Governance — Admin Dashboard</h1>
             <p class="text-gray-600">System Metrics & Management</p>
             <div class="mt-4">
-                <a href="/app" class="text-blue-600 hover:underline">← Back to Chat</a> |
-                <a href="/governance-ui" class="text-blue-600 hover:underline">Governance Logs</a>
+                <a href="/app" class="text-violet-600 hover:underline">← Back to Chat</a> |
+                <a href="/governance-ui" class="text-violet-600 hover:underline">Governance Logs</a>
             </div>
         </div>
 
@@ -23,7 +28,7 @@
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <div class="bg-white p-6 rounded-lg shadow">
                 <h3 class="text-gray-500 text-sm font-semibold">Total Interactions</h3>
-                <p id="totalInteractions" class="text-3xl font-bold text-blue-600">-</p>
+                <p id="totalInteractions" class="text-3xl font-bold text-violet-600">-</p>
             </div>
             <div class="bg-white p-6 rounded-lg shadow">
                 <h3 class="text-gray-500 text-sm font-semibold">Escalations</h3>
@@ -129,6 +134,6 @@
         </div>
     </div>
 
-    <script src="/static/js/admin.js"></script>
+    <script src="/static/js/admin.js?v=1"></script>
 </body>
 </html>

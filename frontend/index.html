@@ -5,12 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MedAdvice v3 - Medical Guidance</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter','ui-sans-serif','system-ui','-apple-system','Segoe UI','Roboto','Helvetica','Arial','sans-serif'] } } } };</script>
+    <style>body{font-family:'Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}</style>
     <style>
         :root {
-            --primary: #2563eb;
-            --primary-hover: #1d4ed8;
-            --primary-light: #dbeafe;
-            --primary-ring: #93bbfd;
+            --primary: #7c3aed;
+            --primary-hover: #6d28d9;
+            --primary-light: #ede9fe;
+            --primary-ring: #c4b5fd;
         }
         .message-user {
             background-color: var(--primary);
@@ -73,7 +78,7 @@
         }
     </style>
 </head>
-<body class="bg-gray-100">
+<body class="bg-gray-50">
     <!-- Disclaimer Modal -->
     <div id="disclaimerModal" class="modal active">
         <div class="bg-white p-8 rounded-lg shadow-xl max-w-2xl mx-4">
@@ -108,7 +113,7 @@
                 <button onclick="declineDisclaimer()" class="px-6 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400">
                     Decline
                 </button>
-                <button id="acceptBtn" onclick="acceptDisclaimer()" class="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                <button id="acceptBtn" onclick="acceptDisclaimer()" class="px-6 py-2 bg-violet-600 text-white rounded hover:bg-violet-700">
                     I Accept & Continue
                 </button>
             </div>
@@ -193,7 +198,7 @@
                         <div class="flex items-center space-x-3">
                             <label class="relative inline-flex items-center cursor-pointer">
                                 <input type="checkbox" id="piiToggle" class="sr-only peer" onchange="togglePII()">
-                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-violet-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
                             </label>
                             <div>
                                 <span id="piiLabel" class="text-sm font-semibold text-gray-700">Include Synthetic PII/PHI in Responses</span>
@@ -307,7 +312,7 @@
             <div class="bg-white shadow-lg rounded-lg p-6 mb-4">
                 <div class="flex justify-between items-start">
                     <div>
-                        <h1 id="appTitle" class="text-3xl font-bold text-blue-600 mb-2">MedAdvice v3</h1>
+                        <h1 id="appTitle" class="text-3xl font-bold text-violet-600 mb-2">MedAdvice v3</h1>
                         <p id="appSubtitle" class="text-gray-600">General Medical Guidance with AI Governance</p>
                         <p class="text-xs text-gray-400 mt-2">Session ID: <span id="sessionId" class="font-mono"></span></p>
                     </div>
@@ -343,13 +348,13 @@
                         type="text"
                         id="messageInput"
                         placeholder="Describe your symptoms or concern..."
-                        class="flex-1 p-4 text-lg border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        class="flex-1 p-4 text-lg border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
                         onkeypress="handleKeyPress(event)"
                     />
                     <button
                         onclick="sendMessage()"
                         id="sendButton"
-                        class="px-8 py-4 text-lg bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                        class="px-8 py-4 text-lg bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
                     >
                         Send
                     </button>
@@ -365,14 +370,14 @@
             <div id="appFooter" class="text-center text-gray-500 text-sm">
                 <p>All conversations are logged for quality assurance and safety monitoring.</p>
                 <p class="mt-2">
-                    <a href="/admin-ui" class="text-blue-600 hover:underline" target="_blank">Admin Dashboard</a> |
-                    <a href="/governance-ui" class="text-blue-600 hover:underline" target="_blank">Governance Logs</a> |
-                    <a href="/settings-ui" class="text-blue-600 hover:underline" target="_blank">Settings</a>
+                    <a href="/admin-ui" class="text-violet-600 hover:underline" target="_blank">Admin Dashboard</a> |
+                    <a href="/governance-ui" class="text-violet-600 hover:underline" target="_blank">Governance Logs</a> |
+                    <a href="/settings-ui" class="text-violet-600 hover:underline" target="_blank">Settings</a>
                 </p>
             </div>
         </div>
     </div>
 
-    <script src="/static/js/chat.js?v=8"></script>
+    <script src="/static/js/chat.js?v=9"></script>
 </body>
 </html>

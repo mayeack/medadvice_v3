@@ -5,16 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Governance Logs</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter','ui-sans-serif','system-ui','-apple-system','Segoe UI','Roboto','Helvetica','Arial','sans-serif'] } } } };</script>
+    <style>body{font-family:'Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}</style>
 </head>
-<body class="bg-gray-100">
+<body class="bg-gray-50">
     <div class="container mx-auto p-4">
         <!-- Header -->
         <div class="bg-white shadow-lg rounded-lg p-6 mb-4">
-            <h1 class="text-3xl font-bold text-blue-600 mb-2">AI Governance Logs</h1>
+            <h1 class="text-3xl font-bold text-violet-600 mb-2">AI Governance Logs</h1>
             <p class="text-gray-600">Comprehensive AI Interaction Traceability</p>
             <div class="mt-4">
-                <a href="/app" class="text-blue-600 hover:underline">← Back to Chat</a> |
-                <a href="/admin-ui" class="text-blue-600 hover:underline">Admin Dashboard</a>
+                <a href="/app" class="text-violet-600 hover:underline">← Back to Chat</a> |
+                <a href="/admin-ui" class="text-violet-600 hover:underline">Admin Dashboard</a>
             </div>
         </div>
 
@@ -26,11 +31,11 @@
                     type="text"
                     id="sessionIdInput"
                     placeholder="Enter session ID..."
-                    class="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    class="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
                 />
                 <button
                     onclick="loadSessionGovernance()"
-                    class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    class="px-6 py-3 bg-violet-600 text-white rounded-lg hover:bg-violet-700"
                 >
                     Load Session
                 </button>
@@ -175,12 +180,12 @@
             }
 
             container.innerHTML = messages.map(msg => {
-                const roleClass = msg.role === 'user' ? 'bg-blue-50 border-l-4 border-blue-500' : 'bg-gray-50 border-l-4 border-gray-400';
+                const roleClass = msg.role === 'user' ? 'bg-violet-50 border-l-4 border-violet-500' : 'bg-gray-50 border-l-4 border-gray-400';
                 return `
                     <div class="${roleClass} p-3 rounded">
                         <p class="text-xs text-gray-500 mb-1">${msg.role.toUpperCase()} - ${new Date(msg.timestamp).toLocaleString()}</p>
                         <p class="text-sm">${msg.content}</p>
-                        ${msg.type ? `<span class="inline-block mt-2 px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded">${msg.type}</span>` : ''}
+                        ${msg.type ? `<span class="inline-block mt-2 px-2 py-1 text-xs bg-violet-100 text-violet-800 rounded">${msg.type}</span>` : ''}
                     </div>
                 `;
             }).join('');
@@ -249,7 +254,7 @@
             container.innerHTML = escalations.map(esc => {
                 const statusColors = {
                     'pending': 'bg-yellow-100 text-yellow-800',
-                    'reviewed': 'bg-blue-100 text-blue-800',
+                    'reviewed': 'bg-violet-100 text-violet-800',
                     'resolved': 'bg-green-100 text-green-800'
                 };
 

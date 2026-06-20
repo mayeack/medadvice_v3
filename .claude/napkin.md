@@ -7,6 +7,17 @@ Curated, high-value runbook. Read before work; keep only recurring guidance.
   behavior, bug fix, or integration change. Don't just run tests; extend them so
   the new/fixed behavior is asserted and a future regression fails loudly.
   Observability → `tests/observability/` (run via `verify_observability.sh`).
+- **API surface → `tests/test_api.py`** (`venv/bin/python tests/test_api.py`): a
+  standalone TestClient suite over `backend.main:app` asserting auth gating (401
+  w/o key), happy-path contracts, and validation (422) for every endpoint. It's
+  side-effect-safe (LLM boundary + auto-prompter stubbed; incident `drive_traffic`
+  false) so it makes no real Anthropic call / load / emission. **Needs httpx
+  0.27.x** — httpx 0.28 dropped the `app=` shortcut that Starlette 0.35's
+  TestClient uses (pinned in `requirements.txt`; the app itself never used `app=`).
+- **Flag breaking/behavior changes to the user.** When a change alters an existing
+  endpoint, response field, feature, or telemetry contract — or bumps a dependency
+  in a way that changes runtime behavior — say so by name in that turn; never let
+  it pass silently. `test_api.py` + `verify_observability.sh` are the detectors.
 
 ## Observability (Splunk O11y) — CRITICAL
 - **After ANY change to the observability integration, run

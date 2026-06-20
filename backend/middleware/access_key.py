@@ -92,19 +92,22 @@ _UNAUTHORIZED_HTML = """<!DOCTYPE html>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Access required · MedAdvice</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    :root{--primary:#2563eb;--primary-hover:#1d4ed8;--ink:#0f172a;--muted:#64748b;--bg1:#eff6ff;--bg2:#e2e8f0;}
+    :root{--primary:#7c3aed;--primary-hover:#6d28d9;--ink:#0f172a;--muted:#64748b;--bg1:#f5f3ff;--bg2:#ede9fe;}
     *{box-sizing:border-box}
     body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
-      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+      font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
       background:radial-gradient(1200px 600px at 50% -10%,var(--bg1),var(--bg2));color:var(--ink);}
     .card{width:100%;max-width:420px;background:#fff;border:1px solid #e5e7eb;border-radius:20px;
       box-shadow:0 20px 40px -12px rgba(15,23,42,.18),0 2px 6px rgba(15,23,42,.06);
       padding:40px 34px;text-align:center;animation:rise .4s cubic-bezier(.2,.8,.2,1);}
     @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
     .badge{width:62px;height:62px;margin:0 auto 22px;border-radius:17px;
-      background:linear-gradient(135deg,#dbeafe,#eff6ff);display:flex;align-items:center;justify-content:center;
-      color:var(--primary);box-shadow:inset 0 0 0 1px rgba(37,99,235,.15)}
+      background:linear-gradient(135deg,#ede9fe,#f5f3ff);display:flex;align-items:center;justify-content:center;
+      color:var(--primary);box-shadow:inset 0 0 0 1px rgba(124,58,237,.15)}
     .badge svg{width:29px;height:29px}
     h1{font-size:22px;margin:0 0 9px;letter-spacing:-.02em}
     p{margin:0 auto 28px;color:var(--muted);font-size:15px;line-height:1.55;max-width:300px}

@@ -82,7 +82,7 @@ function updateTokenChart(inputTokens, outputTokens) {
         labels: ['Input Tokens', 'Output Tokens'],
         datasets: [{
             data: [inputTokens, outputTokens],
-            backgroundColor: ['#3b82f6', '#8b5cf6']
+            backgroundColor: ['#7c3aed', '#c4b5fd']
         }]
     };
 
@@ -134,7 +134,7 @@ async function loadEscalations() {
         tbody.innerHTML = data.escalations.map(esc => {
             const statusColors = {
                 'pending': 'bg-yellow-100 text-yellow-800',
-                'reviewed': 'bg-blue-100 text-blue-800',
+                'reviewed': 'bg-violet-100 text-violet-800',
                 'resolved': 'bg-green-100 text-green-800'
             };
 
@@ -155,7 +155,7 @@ async function loadEscalations() {
                         <span class="px-2 py-1 text-xs rounded ${statusColors[esc.review_status] || ''}">${esc.review_status}</span>
                     </td>
                     <td class="px-4 py-2">
-                        <button onclick="viewEscalation('${esc.session_id}')" class="text-blue-600 hover:underline text-sm">View</button>
+                        <button onclick="viewEscalation('${esc.session_id}')" class="text-violet-600 hover:underline text-sm">View</button>
                         ${esc.review_status === 'pending' ? `
                         <button onclick="reviewEscalation('${esc.escalation_id}')" class="text-green-600 hover:underline text-sm ml-2">Review</button>
                         ` : ''}
@@ -197,7 +197,7 @@ async function loadRecentInteractions() {
                     <td class="px-4 py-2 text-sm">${log.usage_total_tokens || '-'}</td>
                     <td class="px-4 py-2">${flags.join(' ') || '-'}</td>
                     <td class="px-4 py-2">
-                        <button onclick="viewSession('${log.session_id}')" class="text-blue-600 hover:underline text-sm">View</button>
+                        <button onclick="viewSession('${log.session_id}')" class="text-violet-600 hover:underline text-sm">View</button>
                     </td>
                 </tr>
             `;

@@ -61,6 +61,10 @@ async def send_message(
 ):
     """Send a message and get a response"""
 
+    # request.client is Optional per the ASGI spec (None under the TestClient and
+    # behind some proxies); guard it like the access-key / request-logging middleware.
+    client_host = request.client.host if request.client else None
+
     # Demo-incident fault injection: inflate latency and/or fail with 5xx so the
     # medadvice-v3 APM service breaches its latency / error-rate detectors, giving
     # the AI Troubleshooting Agent an alert to analyze. See backend/incident_mode.py.
@@ -123,9 +127,9 @@ async def send_message(
                 actor="user",
                 details={
                     "disclaimer_accepted": True,
-                    "client_address": request.client.host
+                    "client_address": client_host
                 },
-                ip_address=request.client.host,
+                ip_address=client_host,
                 enduser_id=sessions[session_id]["enduser_id"]
             )
 
@@ -145,7 +149,7 @@ async def send_message(
         session_id=session_id,
         user_message=chat_request.message,
         conversation_history=session["messages"],
-        client_address=request.client.host,
+        client_address=client_host,
         theme=chat_request.theme,
         force_pii_injection=chat_request.force_pii_injection,
         force_toxic_injection=chat_request.force_toxic_injection,
