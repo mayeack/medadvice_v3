@@ -16,6 +16,16 @@ receivers:
 
 processors:
   batch: {}
+  # Galileo only ingests GenAI spans. Drop everything else (FastAPI HTTP
+  # server/client spans) before the Galileo exporter so they don't trigger
+  # Galileo's "No GenAI patterns detected in spans" partial-success drops. Keeps
+  # only spans carrying gen_ai.operation.name (workflow / invoke_agent / chat).
+  # Splunk APM still receives the full trace via the separate traces pipeline.
+  filter/genai_only:
+    error_mode: ignore
+    traces:
+      span:
+        - 'attributes["gen_ai.operation.name"] == nil'
 
 exporters:
   signalfx:
@@ -30,7 +40,7 @@ exporters:
   # Header KEYS are fixed (Galileo-API-Key/project/logstream); values from env,
   # injected by run-collector.sh. Galileo auto-maps OpenTelemetry GenAI semconv.
   otlphttp/galileo:
-    traces_endpoint: "https://api.galileo.ai/otel/traces"
+    traces_endpoint: "https://api.multitenant.galileocloud.io/otel/traces"
     headers:
       Galileo-API-Key: "${env:GALILEO_API_KEY}"
       project: "${env:GALILEO_PROJECT}"
@@ -38,10 +48,16 @@ exporters:
 
 service:
   pipelines:
+    # Splunk APM: full traces (HTTP + GenAI spans).
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlphttp/traces, otlphttp/galileo]
+      exporters: [otlphttp/traces]
+    # Galileo: GenAI spans only (HTTP spans filtered out above).
+    traces/galileo:
+      receivers: [otlp]
+      processors: [filter/genai_only, batch]
+      exporters: [otlphttp/galileo]
     metrics:
       receivers: [otlp]
       processors: [batch]

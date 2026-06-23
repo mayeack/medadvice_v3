@@ -55,10 +55,22 @@ check("_text flattens message lists + passes strings",
 
 # ---- wiring presence (export paths) ----
 collector = (ROOT / "otel-collector-config.yaml").read_text()
-check("collector has the otlphttp/galileo exporter -> api.galileo.ai",
-      "otlphttp/galileo" in collector and "api.galileo.ai/otel/traces" in collector)
+check("collector has the otlphttp/galileo exporter -> multitenant galileocloud",
+      "otlphttp/galileo" in collector and "api.multitenant.galileocloud.io/otel/traces" in collector)
 check("galileo exporter is on the traces pipeline",
       "otlphttp/galileo" in collector.split("pipelines:", 1)[-1])
+# Galileo ingests GenAI spans only; the fan-out must drop non-GenAI (HTTP) spans
+# or Galileo answers every batch with a "No GenAI patterns detected" partial drop.
+# Splunk APM, on its own pipeline, must still receive the FULL trace.
+_pl = collector.split("pipelines:", 1)[-1]
+_splunk_block = _pl.split("traces/galileo:", 1)[0]
+_galileo_block = _pl.split("traces/galileo:", 1)[-1].split("metrics:", 1)[0]
+check("collector defines a GenAI-only filter (drops non-gen_ai spans)",
+      "filter/genai_only" in collector and "gen_ai.operation.name" in collector)
+check("Galileo export pipeline applies the GenAI-only filter",
+      "filter/genai_only" in _galileo_block and "otlphttp/galileo" in _galileo_block)
+check("Splunk APM traces pipeline keeps the full trace (no GenAI filter)",
+      "otlphttp/traces" in _splunk_block and "filter/genai_only" not in _splunk_block)
 check("run.sh exports GALILEO_* to the app process",
       "GALILEO_" in (ROOT / "run.sh").read_text())
 check("run-collector.sh injects GALILEO_* into the collector",
