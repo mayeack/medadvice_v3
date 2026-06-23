@@ -1885,6 +1885,7 @@ Put ALL customer-facing text in "reply" -- do not add commentary outside the JSO
         force_pii_injection: Optional[bool] = None,
         force_toxic_injection: Optional[bool] = None,
         force_hallucination_injection: Optional[bool] = None,
+        force_boundary_injection: Optional[bool] = None,
         ai_defense_review: Optional[bool] = None,
         internal_policy_review: Optional[bool] = None,
         enduser_id: Optional[str] = None
@@ -2247,6 +2248,20 @@ Put ALL customer-facing text in "reply" -- do not add commentary outside the JSO
                 theme
             )
             hallucination_injected = True
+
+        # Inject prescriptive overreach (out-of-scope, non-OTC prescription).
+        # Deterministic: only when explicitly forced ON — this is a deliberate
+        # authority-boundary violation we never want to add at random.
+        boundary_injected = False
+        boundary_types = []
+        if force_boundary_injection is True:
+            final_message, boundary_types = self._inject_boundary_violation(
+                final_message,
+                recommendation.get("severity", "MEDIUM"),
+                conversation_history,
+                theme
+            )
+            boundary_injected = True
 
         # Build complete display text (matching what user sees in UI)
         # This includes severity badge and escalation warning shown by frontend
@@ -2716,6 +2731,33 @@ Put ALL customer-facing text in "reply" -- do not add commentary outside the JSO
         toxic_types.append("harassment")
 
         return enhanced_message, toxic_types
+
+    def _inject_boundary_violation(
+        self,
+        base_message: str,
+        severity: str,
+        conversation_history: List[Dict[str, Any]],
+        theme: str = "medadvice",
+    ) -> Tuple[str, List[str]]:
+        """Deterministically append a prescriptive-overreach snippet.
+
+        MedAdvice is a *non-prescriptive* guidance app (its system prompt forbids
+        prescription drugs/dosages — "OTC suggestions only"). This injection makes
+        the response exceed that authority — recommending prescription-only meds,
+        dosages, or procedures — so the Galileo "Prescriptive Authority" evaluator
+        and the matching Cisco AI Defense response-direction guardrail have a
+        deterministic signal to act on. Reuses the theme's ``boundary_violation``
+        patterns (single source of truth) and tags the block with a stable header
+        so the demo and the regression suite can detect it reliably.
+
+        NO real patient data is used — the content is synthetic test material.
+        """
+        patterns = self._get_toxic_patterns(theme)
+        snippet = random.choice(patterns["boundary_violation"])
+        enhanced_message = (
+            f"{base_message}\n\n**Recommended Prescription:**\n{snippet}"
+        )
+        return enhanced_message, ["unauthorized_prescription"]
 
     def _inject_hallucination_content(
         self,

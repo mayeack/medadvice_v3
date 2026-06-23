@@ -166,13 +166,19 @@ class AIDefenseClient:
         if enduser_id:
             metadata["user"] = enduser_id
 
-        # Build the inspection config. When ai_defense_enabled_rules is set, the
-        # rules are passed explicitly so AI Defense applies them directly on this
-        # call (self-contained, direction-independent) rather than relying on the
-        # SCC-configured policy. An empty list — or a connection that already has
-        # an SCC policy bound (see _enabled_rules_supported) — defers to the
-        # connection's UI-configured policy (config: {}).
-        rules = settings.ai_defense_rule_config
+        # Build the inspection config. When enabled_rules are set, they are passed
+        # explicitly so AI Defense applies them directly on this call
+        # (self-contained) rather than relying on the SCC-configured policy. The
+        # prompt and response directions enforce different rule sets: the response
+        # inspection drops prompt-only rules and adds the custom prescription /
+        # scope-of-authority guardrail (see config.ai_defense_response_rule_config).
+        # An empty list — or a connection that already has an SCC policy bound
+        # (see _enabled_rules_supported) — defers to the connection's UI policy.
+        rules = (
+            settings.ai_defense_response_rule_config
+            if stage == "response"
+            else settings.ai_defense_rule_config
+        )
         send_enabled_rules = bool(rules) and self._enabled_rules_supported
         config: Dict[str, Any] = {"enabled_rules": rules} if send_enabled_rules else {}
 

@@ -22,6 +22,7 @@ import time
 from typing import Any, Callable, Dict
 
 from backend.agents.llm import ChatModelError, invoke_agent
+from backend.agents.nodes.injection import build_input_directives
 from backend.agents.nodes.shared import build_llm_messages, content_engine
 from backend.config import settings
 from backend.logging.governance_logger import governance_logger
@@ -52,12 +53,38 @@ def _parse_recommendation(output_text: str, conversational: bool) -> Dict[str, A
         }
 
 
+def _extract_directive_tail(output_text: str) -> str:
+    """Return any text the model appended AFTER its structured JSON answer.
+
+    Under the governance directive the model emits its normal ```json answer```
+    and then appends a "Synthetic governance test samples" block. The JSON-only
+    parse in ``_parse_recommendation`` would discard that block, so the injection
+    node would never see the model's own governance content and would wrongly fall
+    back. Preserving the tail lets a compliant model response stand on its own.
+    """
+    text = output_text or ""
+    m = re.search(r"```(?:json)?\s*\{.*?\}\s*```", text, re.DOTALL)
+    if m:
+        return text[m.end():].strip()
+    idx = text.lower().find("synthetic governance test samples")
+    if idx != -1:
+        nl = text.rfind("\n", 0, idx)
+        return text[(nl + 1 if nl != -1 else idx):].strip()
+    return ""
+
+
 def make_domain_agent(theme_config) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
     """Build the domain-agent node for a specific theme."""
 
     def domain_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
         messages = build_llm_messages(state.get("conversation_history", []))
         system_prompt = state.get("system_prompt") or theme_config.system_prompt
+        # Governance demo: instead of injecting unsafe content into the output,
+        # append a directive to the INPUT asking the model to produce the toggled
+        # content itself. The decision (one roll per turn) is shared with the
+        # post-LLM injection node via ``requested_categories``.
+        directive_text, requested_categories = build_input_directives(state)
+        system_prompt = system_prompt + directive_text
         provider = settings.ai_provider
 
         with otel.agent_span(theme_config.agent_name, theme=theme_config.key):
@@ -93,8 +120,17 @@ def make_domain_agent(theme_config) -> Callable[[Dict[str, Any]], Dict[str, Any]
         confidence = recommendation.get("confidence", 0.5)
         final_message = content_engine._format_recommendation(recommendation)
 
+        # Carry forward any governance test samples the model appended after its
+        # JSON answer (structured themes only — conversational replies aren't
+        # JSON-parsed, so their samples are already in final_message).
+        if not theme_config.conversational:
+            tail = _extract_directive_tail(response.content)
+            if tail:
+                final_message = f"{final_message}\n\n{tail}"
+
         return {
             "messages": messages,
+            "requested_categories": requested_categories,
             "recommendation": recommendation,
             "llm_response_id": response.id,
             "llm_model": response.model,

@@ -3,6 +3,7 @@ let disclaimerAccepted = false;
 let piiEnabled = false;
 let toxicEnabled = false;
 let hallucinationEnabled = false;
+let boundaryEnabled = false;
 let aiDefenseEnabled = false;
 let internalPolicyEnabled = true;
 let autoPromptEnabled = false;
@@ -342,6 +343,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const savedPiiEnabled = localStorage.getItem('medadvice_pii_enabled');
     const savedToxicEnabled = localStorage.getItem('medadvice_toxic_enabled');
     const savedHallucinationEnabled = localStorage.getItem('medadvice_hallucination_enabled');
+    const savedBoundaryEnabled = localStorage.getItem('medadvice_boundary_enabled');
     const savedAiDefenseEnabled = localStorage.getItem('medadvice_ai_defense_enabled');
     const savedInternalPolicyEnabled = localStorage.getItem('medadvice_internal_policy_enabled');
 
@@ -351,6 +353,7 @@ document.addEventListener('DOMContentLoaded', function() {
         piiEnabled = savedPiiEnabled === 'true';
         toxicEnabled = savedToxicEnabled === 'true';
         hallucinationEnabled = savedHallucinationEnabled === 'true';
+        boundaryEnabled = savedBoundaryEnabled === 'true';
         aiDefenseEnabled = savedAiDefenseEnabled === 'true';
         // Internal policy engine defaults ON unless explicitly turned off.
         internalPolicyEnabled = savedInternalPolicyEnabled !== 'false';
@@ -373,6 +376,12 @@ document.addEventListener('DOMContentLoaded', function() {
         if (hallucinationToggle) {
             hallucinationToggle.checked = hallucinationEnabled;
             updateHallucinationStatus();
+        }
+
+        const boundaryToggle = document.getElementById('boundaryToggle');
+        if (boundaryToggle) {
+            boundaryToggle.checked = boundaryEnabled;
+            updateBoundaryStatus();
         }
 
         const aiDefenseToggle = document.getElementById('aiDefenseToggle');
@@ -479,6 +488,7 @@ async function sendMessage() {
                 force_pii_injection: piiEnabled,
                 force_toxic_injection: toxicEnabled,
                 force_hallucination_injection: hallucinationEnabled,
+                force_boundary_injection: boundaryEnabled,
                 ai_defense_review: aiDefenseEnabled,
                 internal_policy_review: internalPolicyEnabled
             })
@@ -702,6 +712,25 @@ function updateHallucinationStatus() {
     if (hallucinationEnabled) {
         statusElement.textContent = 'ALWAYS ON';
         statusElement.className = 'px-3 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-600';
+    } else {
+        statusElement.textContent = 'RANDOM (25%)';
+        statusElement.className = 'px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-600';
+    }
+}
+
+function toggleBoundary() {
+    const toggle = document.getElementById('boundaryToggle');
+    boundaryEnabled = toggle.checked;
+    localStorage.setItem('medadvice_boundary_enabled', boundaryEnabled);
+    updateBoundaryStatus();
+    console.log('Outside-of-authority injection', boundaryEnabled ? 'enabled' : 'disabled');
+}
+
+function updateBoundaryStatus() {
+    const statusElement = document.getElementById('boundaryStatus');
+    if (boundaryEnabled) {
+        statusElement.textContent = 'ALWAYS ON';
+        statusElement.className = 'px-3 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-600';
     } else {
         statusElement.textContent = 'RANDOM (25%)';
         statusElement.className = 'px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-600';
