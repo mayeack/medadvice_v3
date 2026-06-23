@@ -141,6 +141,7 @@ def run_turn(
     force_pii_injection: Optional[bool] = None,
     force_toxic_injection: Optional[bool] = None,
     force_hallucination_injection: Optional[bool] = None,
+    force_boundary_injection: Optional[bool] = None,
     ai_defense_review: Optional[bool] = None,
     internal_policy_review: Optional[bool] = None,
     enduser_id: Optional[str] = None,
@@ -167,6 +168,7 @@ def run_turn(
         force_pii_injection=force_pii_injection,
         force_toxic_injection=force_toxic_injection,
         force_hallucination_injection=force_hallucination_injection,
+        force_boundary_injection=force_boundary_injection,
         ai_defense_review=ai_defense_review,
         internal_policy_review=internal_policy_review,
     )

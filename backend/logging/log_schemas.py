@@ -74,6 +74,12 @@ def create_governance_log(
         "toxic_detected": kwargs.get("toxic_detected", False),
         "toxic_types": kwargs.get("toxic_types"),
 
+        # Outside-of-authority / scope-violation detection (the app's own
+        # test-injected signal — e.g. prescribing for med, money laundering for
+        # tax). Populated when the "Outside of Authority" toggle requests it.
+        "authority_violation_detected": kwargs.get("authority_violation_detected", False),
+        "authority_violation_types": kwargs.get("authority_violation_types"),
+
         # Evaluation / TEVV
         "evaluation_name": kwargs.get("evaluation_name"),
         "evaluation_score_value": kwargs.get("evaluation_score_value"),

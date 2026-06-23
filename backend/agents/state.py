@@ -29,6 +29,7 @@ class MedAdviceState(TypedDict, total=False):
     force_pii_injection: Optional[bool]
     force_toxic_injection: Optional[bool]
     force_hallucination_injection: Optional[bool]
+    force_boundary_injection: Optional[bool]
     ai_defense_review: Optional[bool]
     internal_policy_review: Optional[bool]
 
@@ -39,6 +40,12 @@ class MedAdviceState(TypedDict, total=False):
     system_prompt: str
     agent_name: str
     conversational: bool
+
+    # ---- Governance directive decision (domain agent, one roll per turn) ----
+    # Which test-content categories were requested for this turn (pii / toxic /
+    # hallucination / authority). Set PRE-LLM so the input directive and the
+    # post-LLM injection fallback agree on a single decision.
+    requested_categories: Dict[str, bool]
 
     # ---- LLM messages + raw model output (domain agent) ----
     messages: List[Dict[str, Any]]
@@ -66,6 +73,8 @@ class MedAdviceState(TypedDict, total=False):
     toxic_types: List[str]
     hallucination_injected: bool
     hallucination_types: List[str]
+    boundary_injected: bool
+    boundary_types: List[str]
 
     # ---- Short-circuit + final result ----
     # ``terminal`` is set by any node that fully handled the turn (policy block,
@@ -88,6 +97,7 @@ def build_initial_state(
     force_pii_injection: Optional[bool] = None,
     force_toxic_injection: Optional[bool] = None,
     force_hallucination_injection: Optional[bool] = None,
+    force_boundary_injection: Optional[bool] = None,
     ai_defense_review: Optional[bool] = None,
     internal_policy_review: Optional[bool] = None,
 ) -> MedAdviceState:
@@ -107,6 +117,7 @@ def build_initial_state(
         force_pii_injection=force_pii_injection,
         force_toxic_injection=force_toxic_injection,
         force_hallucination_injection=force_hallucination_injection,
+        force_boundary_injection=force_boundary_injection,
         ai_defense_review=ai_defense_review,
         internal_policy_review=internal_policy_review,
         terminal=False,

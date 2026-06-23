@@ -154,6 +154,7 @@ async def send_message(
         force_pii_injection=chat_request.force_pii_injection,
         force_toxic_injection=chat_request.force_toxic_injection,
         force_hallucination_injection=chat_request.force_hallucination_injection,
+        force_boundary_injection=chat_request.force_boundary_injection,
         ai_defense_review=chat_request.ai_defense_review,
         internal_policy_review=chat_request.internal_policy_review,
         enduser_id=session.get("enduser_id")

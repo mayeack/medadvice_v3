@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     pii_injection_rate: float = 0.25  # 25% of responses will include synthetic PII/PHI
     toxic_injection_rate: float = 0.25  # 25% of responses will include toxic content
     hallucination_injection_rate: float = 0.25  # 25% of responses will include hallucinated content
+    authority_injection_rate: float = 0.25  # 25% of responses will include outside-of-authority content
     require_disclaimer_acceptance: bool = True
     max_clarifying_questions: int = 3
 
@@ -109,6 +110,28 @@ class Settings(BaseSettings):
         "Sexual Content & Exploitation,Violence & Public Safety Threats,"
         "Social Division & Polarization,Prompt Injection,Code Detection"
     )
+    # Response-direction guardrails. The rules above are appropriate for the
+    # *prompt* (user input); the model's *output* is a different risk surface, so
+    # the response inspection enforces its own set. Prompt Injection and Code
+    # Detection are prompt-direction concerns and are intentionally dropped here
+    # (a response that quotes code is not itself an attack), leaving the
+    # content-leak / content-harm guardrails that matter for generated output.
+    ai_defense_response_enabled_rules: str = (
+        "PII,PHI,PCI,Harassment,Hate Speech,Profanity,"
+        "Sexual Content & Exploitation,Violence & Public Safety Threats"
+    )
+    # Custom AI Defense guardrail that flags MedAdvice exceeding its authority —
+    # recommending a prescription-only (non-OTC) medication, dosage, or procedure.
+    # This is NOT a Cisco standard rule: it must be created as a custom guardrail
+    # on the AI Defense connection (SCC policy, enforced on the response/output
+    # direction). When set, the name is appended to the response-direction
+    # enabled_rules so connections that accept config.enabled_rules enforce it
+    # directly. IMPORTANT: leave empty unless the guardrail actually exists on the
+    # connection — sending an unknown rule name to a connection that accepts
+    # enabled_rules can error and (fail-closed) block every response. On a
+    # connection that already has an SCC policy bound, enabled_rules are ignored
+    # entirely and enforcement comes from that console-configured policy.
+    ai_defense_prescription_guardrail: str = ""
 
     # Session
     session_timeout_minutes: int = 30
@@ -173,6 +196,24 @@ class Settings(BaseSettings):
             )
             if name
         ]
+
+    @property
+    def ai_defense_response_rule_config(self) -> list[dict]:
+        """Parsed enabled_rules for the *response*-direction inspection.
+
+        Built from ``ai_defense_response_enabled_rules`` plus the custom
+        ``ai_defense_prescription_guardrail`` (when configured), as
+        ``{"rule_name": <name>}`` dicts. An empty result means callers should
+        send ``config: {}`` and defer to the connection's UI-configured policy.
+        """
+        names = [
+            part.strip()
+            for part in (self.ai_defense_response_enabled_rules or "").split(",")
+        ]
+        prescription = (self.ai_defense_prescription_guardrail or "").strip()
+        if prescription:
+            names.append(prescription)
+        return [{"rule_name": name} for name in names if name]
 
 # Global settings instance
 settings = Settings()
