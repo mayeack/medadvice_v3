@@ -22,6 +22,21 @@ CMETRICS=http://localhost:8888/metrics
 KEY=$(grep '^ACCESS_KEY=' .env 2>/dev/null | cut -d= -f2)
 sum() { curl -s "$CMETRICS" 2>/dev/null | grep -vE '^#' | grep -E "$1" | awk '{s+=$2} END{print s+0}'; }
 
+echo "== Tier 0: gen_ai spans carry message content (code-level; no live Splunk) =="
+# The #1 cause of an empty "AI trace data" view: spans reach APM with only gen_ai
+# metadata and no prompt/response, so Splunk's content-indexed view never shows them.
+if ./venv/bin/python tests/observability/test_genai_span_content.py >/tmp/genai_content_check.txt 2>&1; then
+  ok "gen_ai spans carry input/output content (Content column + quality/risk evals)"
+else
+  bad "gen_ai spans missing message content -> AI trace data stays empty (see /tmp/genai_content_check.txt)"
+fi
+CMC=$(grep '^OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=' .env 2>/dev/null | cut -d= -f2)
+CMC_UP=$(printf '%s' "$CMC" | tr '[:lower:]' '[:upper:]')  # macOS ships bash 3.2 (no ${x^^})
+case "$CMC_UP" in
+  SPAN_ONLY|SPAN_AND_EVENT) ok "content capture enabled (.env=$CMC)" ;;
+  *) bad ".env OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT='$CMC' -> content won't reach spans (use SPAN_ONLY)" ;;
+esac
+
 echo "== Tier 1: preconditions =="
 lsof -nP -iTCP:4317 -sTCP:LISTEN >/dev/null 2>&1 \
   && ok "OTel collector listening on :4317" \
