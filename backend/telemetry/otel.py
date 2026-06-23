@@ -272,13 +272,57 @@ def _genai_error(exc: Exception):
         return None
 
 
+def _input_messages(system: Optional[str], messages: Optional[list]):
+    """Build a util-genai InputMessage list (system prompt + conversation turns).
+
+    Splunk AI Agent Monitoring's "AI trace data" view indexes gen_ai spans by their
+    message *content* (prompt/response) — it powers the Content column and the
+    quality/risk evaluations. Without messages, the spans still reach APM (and show
+    in Trace Analyzer) but never surface in AI trace data. Degrades to [] if the
+    optional util-genai types are unavailable.
+    """
+    try:
+        from opentelemetry.util.genai.types import InputMessage, Text
+    except Exception:  # noqa: BLE001 - optional dependency
+        return []
+    out = []
+    if system:
+        out.append(InputMessage(role="system", parts=[Text(content=str(system))]))
+    for m in messages or []:
+        role = m.get("role")
+        role = role.value if hasattr(role, "value") else role
+        content = m.get("content", "")
+        if content:
+            out.append(InputMessage(role=str(role or "user"), parts=[Text(content=str(content))]))
+    return out
+
+
+def record_genai_output(inv, *, text: Optional[str], finish_reason: Optional[str] = None) -> None:
+    """Attach the model's response text to an LLM/agent invocation as an
+    OutputMessage so the gen_ai span carries the completion (paired with the input
+    messages set at creation). No-op when the invocation/types are unavailable."""
+    if inv is None or text is None:
+        return
+    try:
+        from opentelemetry.util.genai.types import OutputMessage, Text
+    except Exception:  # noqa: BLE001
+        return
+    inv.output_messages = [
+        OutputMessage(role="assistant", parts=[Text(content=str(text))], finish_reason=finish_reason)
+    ]
+
+
 @contextlib.contextmanager
-def genai_llm_invocation(*, request_model: str, provider: str, operation: str = OP_CHAT):
+def genai_llm_invocation(
+    *, request_model: str, provider: str, operation: str = OP_CHAT,
+    system: Optional[str] = None, messages: Optional[list] = None,
+):
     """Emit a GenAI LLMInvocation via the util-genai handler, carrying the real
     request model + token usage (so the model is no longer "unknown" and Splunk
-    can price it). Yields the LLMInvocation — set ``input_tokens`` /
-    ``output_tokens`` / ``response_model_name`` / ``response_id`` on it inside the
-    block — or None when the handler is unavailable."""
+    can price it). Pass ``system`` + ``messages`` so the span carries the prompt;
+    yields the LLMInvocation — set ``input_tokens`` / ``output_tokens`` /
+    ``response_model_name`` / ``response_id`` and call ``record_genai_output`` on it
+    inside the block — or None when the handler is unavailable."""
     handler = _get_handler()
     if handler is None:
         yield None
@@ -288,6 +332,7 @@ def genai_llm_invocation(*, request_model: str, provider: str, operation: str = 
     inv = LLMInvocation(
         request_model=request_model, operation=operation,
         provider=provider, system=provider,
+        input_messages=_input_messages(system, messages),
     )
     handler.start_llm(inv)
     try:
@@ -308,26 +353,32 @@ def genai_llm_invocation(*, request_model: str, provider: str, operation: str = 
 
 @contextlib.contextmanager
 def genai_agent_invocation(
-    *, agent_name: str, request_model: str, provider: str, agent_type: Optional[str] = None
+    *, agent_name: str, request_model: str, provider: str, agent_type: Optional[str] = None,
+    system: Optional[str] = None, messages: Optional[list] = None,
 ):
     """Emit a GenAI AgentInvocation (so the named agent appears in Splunk's "AI
     agents" view) wrapping a nested LLMInvocation, via the util-genai handler. The
     handler automatically inherits the agent name/id onto the LLM and nests its
-    span under the agent. Yields the nested LLMInvocation — set token usage /
-    response on it inside the block — or None when the handler is unavailable."""
+    span under the agent. Pass ``system`` + ``messages`` so both spans carry the
+    prompt. Yields the nested LLMInvocation — set token usage / ``response`` via
+    ``record_genai_output`` inside the block — or None when the handler is
+    unavailable."""
     handler = _get_handler()
     if handler is None:
         yield None
         return
     from opentelemetry.util.genai.types import AgentInvocation, LLMInvocation
 
+    _inputs = _input_messages(system, messages)
     agent = AgentInvocation(
         name=agent_name, model=request_model, agent_type=agent_type,
         provider=provider, system=provider,
+        system_instructions=system, input_messages=list(_inputs),
     )
     inv = LLMInvocation(
         request_model=request_model, operation=OP_CHAT,
         provider=provider, system=provider,
+        input_messages=list(_inputs),
     )
     handler.start_agent(agent)
     handler.start_llm(inv)
@@ -345,6 +396,13 @@ def genai_agent_invocation(
                 pass
         raise
     else:
+        # Mirror the LLM's response onto the agent span so the agent operation row
+        # in AI trace data also carries the completion content.
+        try:
+            if getattr(inv, "output_messages", None):
+                agent.output_messages = list(inv.output_messages)
+        except Exception:  # noqa: BLE001
+            pass
         try:
             handler.stop_llm(inv)
             handler.stop_agent(agent)

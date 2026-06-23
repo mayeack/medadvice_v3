@@ -216,7 +216,10 @@ def invoke_chat(
 
     # Emit a GenAI LLMInvocation with the real model + token usage so Splunk no
     # longer sees model="unknown" and can price the call (server-side cost).
-    with otel.genai_llm_invocation(request_model=(emit_model or fallback), provider=provider) as llm_inv:
+    with otel.genai_llm_invocation(
+        request_model=(emit_model or fallback), provider=provider,
+        system=system, messages=messages,
+    ) as llm_inv:
         try:
             ai_message = model.invoke(lc_messages)
         except Exception as exc:  # noqa: BLE001 - normalize all provider errors
@@ -224,15 +227,18 @@ def invoke_chat(
         usage = _extract_usage(ai_message)
         meta = _extract_metadata(ai_message, fallback)
         reported_model = emit_model or meta["model"]
+        response_text = _extract_text(ai_message)
         if llm_inv is not None:
             llm_inv.input_tokens = usage["input_tokens"]
             llm_inv.output_tokens = usage["output_tokens"]
             llm_inv.response_model_name = reported_model
             llm_inv.response_id = meta["id"]
+            # Attach prompt+response content so the span surfaces in Splunk AI trace data.
+            otel.record_genai_output(llm_inv, text=response_text, finish_reason=meta["stop_reason"])
 
     return NormalizedLLMResponse(
         id=meta["id"],
-        content=_extract_text(ai_message),
+        content=response_text,
         model=reported_model,
         input_tokens=usage["input_tokens"],
         output_tokens=usage["output_tokens"],
@@ -314,7 +320,8 @@ def invoke_agent(
     # agents" view) wrapping a nested LLMInvocation with the real model + token
     # usage — the auto-instrumentation emits no agent span for create_react_agent.
     with otel.genai_agent_invocation(
-        agent_name=agent_name, request_model=(emit_model or fallback), provider=provider
+        agent_name=agent_name, request_model=(emit_model or fallback), provider=provider,
+        system=system, messages=messages,
     ) as llm_inv:
         try:
             result = agent.invoke({"messages": lc_messages})
@@ -336,15 +343,18 @@ def invoke_agent(
 
         meta = _extract_metadata(final, fallback)
         reported_model = emit_model or meta["model"]
+        final_text = _extract_text(final)
         if llm_inv is not None:
             llm_inv.input_tokens = input_tokens
             llm_inv.output_tokens = output_tokens
             llm_inv.response_model_name = reported_model
             llm_inv.response_id = meta["id"]
+            # Attach prompt+response content so the span surfaces in Splunk AI trace data.
+            otel.record_genai_output(llm_inv, text=final_text, finish_reason=meta["stop_reason"])
 
     return NormalizedLLMResponse(
         id=meta["id"],
-        content=_extract_text(final),
+        content=final_text,
         model=reported_model,
         input_tokens=input_tokens,
         output_tokens=output_tokens,

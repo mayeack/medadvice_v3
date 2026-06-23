@@ -12,6 +12,7 @@ import time
 from typing import Any, Dict
 
 from backend.agents.nodes.shared import clarifying_service, escalation_rules
+from backend.config import settings
 from backend.logging.governance_logger import governance_logger
 from backend.models.schemas import MessageType
 from backend.telemetry import otel
@@ -38,7 +39,10 @@ def governance_node(state: Dict[str, Any]) -> Dict[str, Any]:
     pii_types = state.get("pii_types", []) or []
     toxic_injected = state.get("toxic_injected", False)
     toxic_types = state.get("toxic_types", []) or []
+    hallucination_injected = state.get("hallucination_injected", False)
+    hallucination_types = state.get("hallucination_types", []) or []
 
+    workflow_name = settings.agentic_workflow_name
     duration = time.time() - state["start_time"]
 
     with otel.agent_span("governance_agent", theme=state.get("theme")):
@@ -71,6 +75,12 @@ def governance_node(state: Dict[str, Any]) -> Dict[str, Any]:
             evaluation_score_label=(
                 "high" if confidence > 0.7 else "medium" if confidence > 0.5 else "low"
             ),
+            hallucination_detected=hallucination_injected,
+            hallucination_types=hallucination_types if hallucination_injected else None,
+            severity=severity.value if severity else None,
+            theme=state.get("theme"),
+            agent_name=state.get("agent_name"),
+            workflow_name=workflow_name,
             trace_id=trace_id,
             client_address=client_address,
             enduser_id=enduser_id,

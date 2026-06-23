@@ -83,6 +83,23 @@ def create_governance_log(
         "drift_metric_value": kwargs.get("drift_metric_value"),
         "drift_status": kwargs.get("drift_status"),
 
+        # Hallucination signal. ``hallucination_detected`` is the app's own
+        # (test-injected) signal; the scored ``hallucination_score`` /
+        # ``groundedness_score`` are populated by the eval systems (Splunk GenAI
+        # Scoring, Galileo) and pass through here only when explicitly provided.
+        "hallucination_detected": kwargs.get("hallucination_detected", False),
+        "hallucination_types": kwargs.get("hallucination_types"),
+        "hallucination_score": kwargs.get("hallucination_score"),
+        "groundedness_score": kwargs.get("groundedness_score"),
+
+        # Workflow / agent context (inputs to the executive overlay below).
+        "agent_name": kwargs.get("agent_name"),
+        "workflow_name": kwargs.get("workflow_name"),
+        "theme": kwargs.get("theme"),
+        "severity": kwargs.get("severity"),
+        "tool_name": kwargs.get("tool_name"),
+        "user_type": kwargs.get("user_type"),
+
         # Error and infra fields
         "error_type": kwargs.get("error_type"),
         "server_address": kwargs.get("server_address"),
@@ -96,6 +113,16 @@ def create_governance_log(
         # Timestamp
         "timestamp": kwargs.get("timestamp", datetime.utcnow()).isoformat()
     }
+
+    # Executive overlay: derive the board-level normalized fields (risk_score,
+    # policy_action, business_outcome, estimated_cost, contains_phi,
+    # audit_status, ...) from the assembled event. Additive and fully defensive
+    # — a derivation failure leaves the event unchanged.
+    try:
+        from backend.logging.executive_fields import derive_executive_fields
+        log_entry.update(derive_executive_fields(log_entry))
+    except Exception:  # noqa: BLE001 - enrichment must never break logging
+        pass
 
     # Remove None values for cleaner logs
     return {k: v for k, v in log_entry.items() if v is not None}
