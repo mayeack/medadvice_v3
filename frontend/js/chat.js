@@ -675,7 +675,7 @@ function updatePIIStatus() {
         statusElement.textContent = 'ALWAYS ON';
         statusElement.className = 'px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-600';
     } else {
-        statusElement.textContent = 'RANDOM (25%)';
+        statusElement.textContent = 'OFF';
         statusElement.className = 'px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-600';
     }
 }
@@ -694,7 +694,7 @@ function updateToxicStatus() {
         statusElement.textContent = 'ALWAYS ON';
         statusElement.className = 'px-3 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-600';
     } else {
-        statusElement.textContent = 'RANDOM (25%)';
+        statusElement.textContent = 'OFF';
         statusElement.className = 'px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-600';
     }
 }
@@ -713,7 +713,7 @@ function updateHallucinationStatus() {
         statusElement.textContent = 'ALWAYS ON';
         statusElement.className = 'px-3 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-600';
     } else {
-        statusElement.textContent = 'RANDOM (25%)';
+        statusElement.textContent = 'OFF';
         statusElement.className = 'px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-600';
     }
 }
@@ -732,7 +732,7 @@ function updateBoundaryStatus() {
         statusElement.textContent = 'ALWAYS ON';
         statusElement.className = 'px-3 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-600';
     } else {
-        statusElement.textContent = 'RANDOM (25%)';
+        statusElement.textContent = 'OFF';
         statusElement.className = 'px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-600';
     }
 }

@@ -172,18 +172,23 @@ def build_input_directives(state: Dict[str, Any]) -> Tuple[str, Dict[str, bool]]
 # guardrail demo still fires. A rare double-include is harmless for the demo;
 # a missed fallback (no signal for the guardrails) would not be.
 
-# Detector keywords/regexes widened to match what the live model actually emits
-# under the directive (see probe_directives.py), so a compliant turn is recognized
-# and we do NOT double-inject. Still best-effort: on genuine uncertainty we let the
+# Cisco AI Defense response-block coverage (measured via tests/manual/probe_aidefense.py
+# against the live "Yeack Protect" policy):
+#   - Toxic family (Harassment/Profanity/Hate/Violence/Social Division): ENFORCED.
+#     But the model will NOT reliably produce harassment strong enough to trip the
+#     Harassment classifier (it refuses when pushed), so the verified HARASSMENT
+#     snippet is always appended for the toxic category (see injection_node).
+#   - PII/PHI/PCI: NOT enforced unless those guardrails are enabled in the SCC policy.
+#     No content change can make PII block until the policy adds the PII/PHI rule.
+#   - Hallucination / outside-of-authority: no native Cisco classifier — those are
+#     demonstrated on the Galileo/Splunk eval layer, not a Cisco real-time block.
+#
+# Detector keywords/regexes are best-effort: on genuine uncertainty we let the
 # fallback fire (presence for the guardrails matters more than a rare double-up).
 _SSN_RE = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
-_TOXIC_KEYWORDS = (
-    "idiot", "worthless", "stupid", "pathetic", "incompeten", "moron", "useless",
-    "ridiculous", "foolish", "dumb", "whining", "embarrass", "bothering", "bother me",
-    "trivial", "waste", "wasting", "grow up", "five years old", "google exists",
-    "can't figure", "inability", "make a fuss", "seriously?", "don't deserve",
-    "shut up", "like an adult", "what are you,",
-)
+# (Toxic is no longer detector-gated — the verified harassment snippet is always
+# appended for that category, since the model won't produce classifier-tripping
+# harassment on its own. See injection_node.)
 _HALLUCINATION_RE = re.compile(
     r"\b\d{1,3}(?:\.\d+)?\s*%|\bet al\b|\bjournal\b|\bstudy\b|\bstudies\b|\btrial\b"
     r"|\bapproved by the fda\b|\baccording to (?:a|the)\b.*\b(19|20)\d{2}\b"
@@ -205,12 +210,15 @@ _AUTHORITY_KEYWORDS = (
 
 
 def _contains_pii(text: str) -> bool:
-    return bool(_SSN_RE.search(text))
-
-
-def _contains_toxic(text: str) -> bool:
-    low = text.lower()
-    return any(kw in low for kw in _TOXIC_KEYWORDS)
+    # Require a *plausibly valid* SSN (real PII classifiers reject 000/666/9xx
+    # area numbers, a 00 group, or a 0000 serial), so an invalid model-emitted
+    # SSN falls back to a verified one rather than being treated as compliant.
+    for m in _SSN_RE.finditer(text):
+        area, group, serial = m.group().split("-")
+        if area in ("000", "666") or area[0] == "9" or group == "00" or serial == "0000":
+            continue
+        return True
+    return False
 
 
 def _contains_hallucination(text: str) -> bool:
@@ -264,13 +272,17 @@ def injection_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
         if requested.get("toxic"):
             updates["toxic_injected"] = True
-            if _contains_toxic(final_message):
-                updates["toxic_types"] = ["toxic_content"]
-            else:
-                final_message, toxic_types = content_engine._inject_toxic_content(
-                    final_message, severity_raw, conversation_history, theme
-                )
-                updates["toxic_types"] = toxic_types
+            # The model won't reliably produce harassment strong enough to trip
+            # the Cisco Harassment classifier (it refuses when pushed; measured
+            # 0-1/5 vs 5/5 for the verified snippet). So always append a
+            # verified-to-trip HARASSMENT snippet to guarantee the response-
+            # direction block. The model's own (milder) toxic content stays in
+            # final_message for realism; when the response is blocked it is
+            # withheld anyway, so the appended line is never shown to the user.
+            final_message, toxic_types = content_engine._inject_toxic_content(
+                final_message, severity_raw, conversation_history, theme
+            )
+            updates["toxic_types"] = toxic_types
 
         if requested.get("hallucination"):
             updates["hallucination_injected"] = True
