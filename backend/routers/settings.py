@@ -89,15 +89,34 @@ async def get_emit_model():
 class AiProviderSettings(BaseModel):
     provider: str = Field(min_length=1, max_length=40)
     model: str = Field(default="", max_length=200)
+    # Optional per-provider access fields (e.g. {"api_key": "..."}). Secrets are
+    # write-only: blank values are ignored so an existing key is never wiped.
+    fields: Optional[Dict[str, str]] = None
+
+
+def _provider_payload() -> dict:
+    """Current provider/model + discovered models + per-provider access-field
+    metadata. Secret field values are NEVER included (presence only)."""
+    from backend import model_catalog
+
+    payload = settings_store.get_ai_provider()
+    payload["available"] = model_catalog.available()
+    payload["fields"] = settings_store.get_provider_fields()
+    return payload
 
 
 @router.get("/settings/ai-provider")
 async def get_ai_provider():
-    return settings_store.get_ai_provider()
+    from backend import model_catalog
+
+    model_catalog.ensure_loaded()  # bounded sync refresh if startup discovery hasn't finished
+    return _provider_payload()
 
 
 @router.put("/settings/ai-provider")
 async def update_ai_provider(body: AiProviderSettings):
+    from backend import model_catalog
+
     provider = body.provider.strip().lower()
     if provider not in settings_store.AI_PROVIDER_CHOICES:
         raise HTTPException(
@@ -105,9 +124,24 @@ async def update_ai_provider(body: AiProviderSettings):
             detail=f"unknown provider: {provider}. Valid: {', '.join(settings_store.AI_PROVIDER_CHOICES)}",
         )
     try:
-        return settings_store.set_ai_provider(provider, body.model)
+        settings_store.set_ai_provider(provider, body.model)
+        if body.fields:
+            settings_store.set_provider_creds(provider, body.fields)
+            # New creds may reveal models — re-scan this so the dropdown updates.
+            model_catalog.refresh()
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    return _provider_payload()
+
+
+@router.post("/settings/ai-provider/refresh")
+async def refresh_ai_provider_models():
+    """Re-scan every provider for its currently available models (e.g. after
+    pulling a new Ollama model). Returns the same shape as GET."""
+    from backend import model_catalog
+
+    model_catalog.refresh()
+    return _provider_payload()
 
 
 @router.put("/settings/emit-model")

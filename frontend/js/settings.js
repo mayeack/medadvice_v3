@@ -45,30 +45,107 @@ function setLogsStatus(msg, ok) {
 }
 
 // ------------------------------------------------------------ ai provider
-let _providerModels = {};
+let _providerModels = {};   // provider -> currently configured model
+let _available = {};        // provider -> [models discovered at startup / on refresh]
+let _providerFields = {};   // provider -> [access-field metadata; secrets = presence only]
+
+// Render the access fields (API key etc.) for the selected provider. Secret fields
+// are password inputs that start EMPTY (the value is never sent to the browser);
+// a "(set)" placeholder shows one already exists and that blank keeps it.
+function renderProviderFields(provider) {
+  const box = document.getElementById('providerCreds');
+  const specs = _providerFields[provider] || [];
+  if (!specs.length) { box.innerHTML = ''; return; }
+  box.innerHTML = specs.map(f => {
+    if (f.secret) {
+      const ph = f.present ? '•••••••• (set) — leave blank to keep' : (f.placeholder || ('enter ' + f.label));
+      return `<div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">${esc(f.label)}</label>
+        <input data-cred="${attr(f.key)}" type="password" autocomplete="new-password" placeholder="${attr(ph)}"
+          class="w-full p-2 border border-gray-300 rounded text-sm font-mono focus:outline-none focus:ring-2 focus:ring-violet-500"></div>`;
+    }
+    return `<div>
+      <label class="block text-xs font-semibold text-gray-600 mb-1">${esc(f.label)}</label>
+      <input data-cred="${attr(f.key)}" type="text" value="${attr(f.value || '')}" placeholder="${attr(f.placeholder || '')}"
+        class="w-full p-2 border border-gray-300 rounded text-sm font-mono focus:outline-none focus:ring-2 focus:ring-violet-500"></div>`;
+  }).join('');
+}
+// Collect entered field values. Secret (password) fields are sent only when typed,
+// so a blank secret never overwrites the stored one.
+function collectProviderFields() {
+  const out = {};
+  document.getElementById('providerCreds').querySelectorAll('[data-cred]').forEach(el => {
+    const v = el.value.trim();
+    if (el.type === 'password') { if (v) out[el.getAttribute('data-cred')] = v; }
+    else out[el.getAttribute('data-cred')] = v;
+  });
+  return out;
+}
+
+// Build the option list for a provider: discovered models, with the configured/
+// active model always kept selectable even if discovery didn't return it.
+function modelsForProvider(provider) {
+  const list = (_available[provider] || []).slice();
+  const configured = _providerModels[provider] || '';
+  if (configured && !list.includes(configured)) list.unshift(configured);
+  return list;
+}
+function renderModelOptions(provider, selected) {
+  const sel = document.getElementById('aiModel');
+  const list = modelsForProvider(provider);
+  if (!list.length) {
+    sel.innerHTML = '<option value="">(no models found — check credentials / daemon, then ↻ Refresh)</option>';
+    return;
+  }
+  sel.innerHTML = list.map(m => `<option value="${attr(m)}">${esc(m)}</option>`).join('');
+  if (selected && list.includes(selected)) sel.value = selected;
+}
 async function loadAiProvider() {
   try {
     const d = await api('GET', '/api/settings/ai-provider');
     _providerModels = d.models || {};
+    _available = d.available || {};
+    _providerFields = d.fields || {};
     const sel = document.getElementById('aiProvider');
     sel.innerHTML = (d.choices || []).map(p => `<option value="${attr(p)}">${esc(p)}</option>`).join('');
     sel.value = d.provider;
-    document.getElementById('aiModel').value = d.model || '';
+    renderModelOptions(d.provider, d.model);
+    renderProviderFields(d.provider);
   } catch (e) { setProviderStatus('Failed to load: ' + e.message, false); }
 }
 function onProviderChange() {
-  // Prefill the model box with the selected provider's configured model.
+  // Repopulate the model dropdown + access fields for the newly selected provider.
   const p = document.getElementById('aiProvider').value;
-  document.getElementById('aiModel').value = _providerModels[p] || '';
+  renderModelOptions(p, _providerModels[p] || '');
+  renderProviderFields(p);
+}
+async function refreshModels() {
+  setProviderStatus('Scanning providers for available models…', true);
+  try {
+    const d = await api('POST', '/api/settings/ai-provider/refresh');
+    _providerModels = d.models || _providerModels;
+    _available = d.available || {};
+    const p = document.getElementById('aiProvider').value;
+    const keep = document.getElementById('aiModel').value;
+    renderModelOptions(p, keep || _providerModels[p] || '');
+    setProviderStatus(`Refreshed — ${(_available[p] || []).length} model(s) available for ${p}.`, true);
+  } catch (e) { setProviderStatus('Refresh failed: ' + e.message, false); }
 }
 async function saveAiProvider() {
+  const provider = document.getElementById('aiProvider').value;
   const body = {
-    provider: document.getElementById('aiProvider').value,
+    provider: provider,
     model: document.getElementById('aiModel').value.trim(),
+    fields: collectProviderFields(),
   };
   try {
     const d = await api('PUT', '/api/settings/ai-provider', body);
     _providerModels = d.models || _providerModels;
+    _available = d.available || _available;
+    _providerFields = d.fields || _providerFields;
+    // Re-render so saved secrets reset to masked "(set)" and the model list reflects any new creds.
+    renderModelOptions(provider, d.model);
+    renderProviderFields(provider);
     setProviderStatus(`Saved — chat now uses ${d.provider} · ${d.model || 'default model'}. New turns use it immediately.`, true);
   } catch (e) { setProviderStatus('Error: ' + e.message, false); }
 }
