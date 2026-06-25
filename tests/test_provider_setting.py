@@ -68,11 +68,55 @@ def test_unknown_provider_rejected() -> None:
     check("set_ai_provider rejects an unknown provider (before any DB write)", raised)
 
 
+def test_provider_fields_no_secret_leak() -> None:
+    """The security guarantee: secret field metadata never carries a value."""
+    f = settings_store.get_provider_fields()
+    leaks = [(p, it["key"]) for p, items in f.items() for it in items
+             if it.get("secret") and "value" in it]
+    check("secret fields never expose a value (presence only)", not leaks)
+    check("anthropic surfaces a secret api_key field",
+          any(it["key"] == "api_key" and it["secret"] for it in f["anthropic"]))
+    check("non-secret fields (ollama base_url) do carry a value",
+          any(it["key"] == "base_url" and "value" in it for it in f["ollama"]))
+
+
+def test_secret_apply_mask_and_blank_keep() -> None:
+    """Apply a secret -> mutates settings + persists + masks; blank -> keeps it.
+    DB-safe: load/_persist are stubbed to an in-memory dict (no real write)."""
+    from backend.config import settings
+
+    mem = {"ai_provider_creds": {}}
+    orig_load, orig_persist = settings_store.load, settings_store._persist
+    orig_key = settings.openai_api_key
+    try:
+        settings_store.load = lambda: {k: dict(v) if isinstance(v, dict) else v for k, v in mem.items()}
+        def _fake_persist(data):
+            mem.clear(); mem.update(data)
+        settings_store._persist = _fake_persist
+
+        settings_store.set_provider_creds("openai", {"api_key": "sk-unit-secret"})
+        check("secret applied to live settings", settings.openai_api_key == "sk-unit-secret")
+        check("secret persisted to the store blob",
+              mem["ai_provider_creds"]["openai"]["api_key"] == "sk-unit-secret")
+        oi = [it for it in settings_store.get_provider_fields()["openai"] if it["key"] == "api_key"][0]
+        check("applied secret reads back masked (present, no value)",
+              oi["present"] is True and "value" not in oi)
+
+        settings_store.set_provider_creds("openai", {"api_key": ""})
+        check("blank secret keeps the existing value (never wipes)",
+              settings.openai_api_key == "sk-unit-secret")
+    finally:
+        settings_store.load, settings_store._persist = orig_load, orig_persist
+        settings.openai_api_key = orig_key
+
+
 def main() -> int:
     for fn in (
         test_choices_and_get_shape,
         test_apply_mutates_settings_and_clears_caches,
         test_unknown_provider_rejected,
+        test_provider_fields_no_secret_leak,
+        test_secret_apply_mask_and_blank_keep,
     ):
         try:
             fn()

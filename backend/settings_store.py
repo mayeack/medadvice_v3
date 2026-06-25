@@ -8,6 +8,7 @@ ever reach an API response.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import uuid
 from typing import Any, Dict, List, Optional
@@ -26,6 +27,10 @@ _DEFAULTS: Dict[str, Any] = {
     "emit_model": {"enabled": False, "model_name": "", "random": False},
     # Runtime override of the active LLM provider (empty = use .env/config default).
     "ai_provider": {"provider": "", "model": ""},
+    # Per-provider access credentials/config entered via the Settings UI. Secrets
+    # are stored here in the local (gitignored) SQLite blob, same as HEC tokens,
+    # and are NEVER returned by the API (presence-only on read).
+    "ai_provider_creds": {},
 }
 _ID_RE = re.compile(r"[^a-z0-9-]+")
 
@@ -39,6 +44,59 @@ _PROVIDER_MODEL_ATTR: Dict[str, str] = {
     "openai": "openai_model",
     "ollama": "ollama_model",
 }
+
+
+class _CredField:
+    """One access field surfaced per provider in the Settings UI.
+
+    ``secret`` fields are masked on read (presence only — never the value) and only
+    overwritten on write when a non-empty value is supplied. Each field applies to
+    a live ``settings`` attribute and/or a process env var (for the boto3 chain)."""
+
+    def __init__(self, key, label, *, secret=False, settings_attr=None, env=None, placeholder=""):
+        self.key = key
+        self.label = label
+        self.secret = secret
+        self.settings_attr = settings_attr
+        self.env = env
+        self.placeholder = placeholder
+
+
+# Access fields per provider (the "Model" id is handled separately by the dropdown).
+_PROVIDER_FIELDS: Dict[str, List[_CredField]] = {
+    "anthropic": [
+        _CredField("api_key", "API key", secret=True, settings_attr="anthropic_api_key",
+                   placeholder="sk-ant-…"),
+    ],
+    "openai": [
+        _CredField("api_key", "API key", secret=True, settings_attr="openai_api_key",
+                   placeholder="sk-…"),
+        _CredField("base_url", "Base URL", settings_attr="openai_base_url",
+                   placeholder="https://api.openai.com/v1"),
+    ],
+    "bedrock": [
+        _CredField("region", "AWS region", settings_attr="aws_region", env="AWS_DEFAULT_REGION",
+                   placeholder="us-east-1"),
+        _CredField("access_key_id", "AWS access key ID", secret=True, env="AWS_ACCESS_KEY_ID",
+                   placeholder="AKIA…"),
+        _CredField("secret_access_key", "AWS secret access key", secret=True,
+                   env="AWS_SECRET_ACCESS_KEY"),
+    ],
+    "ollama": [
+        _CredField("base_url", "Base URL", settings_attr="ollama_base_url",
+                   placeholder="http://localhost:11434"),
+    ],
+}
+
+
+def _field_current(field: "_CredField") -> str:
+    from backend.config import settings
+
+    if field.settings_attr:
+        return getattr(settings, field.settings_attr, "") or ""
+    if field.env:
+        return os.environ.get(field.env, "") or ""
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +232,91 @@ def apply_ai_provider_from_store() -> None:
     provider = (cfg.get("provider") or "").strip().lower()
     if provider in _PROVIDER_MODEL_ATTR:
         _apply_ai_provider(provider, (cfg.get("model") or "").strip())
+
+
+# ---------------------------------------------------------------------------
+# Per-provider access credentials (API keys etc.) — secrets never leave the box
+# ---------------------------------------------------------------------------
+def get_provider_fields() -> Dict[str, List[Dict[str, Any]]]:
+    """Per-provider access-field metadata for the Settings UI.
+
+    Secret fields report ONLY ``present`` (bool) — never the value, not even a
+    suffix — so no secret is ever exposed. Non-secret fields (base URL, region)
+    return their current value so the field can prefill."""
+    out: Dict[str, List[Dict[str, Any]]] = {}
+    for provider, fields in _PROVIDER_FIELDS.items():
+        items: List[Dict[str, Any]] = []
+        for f in fields:
+            cur = _field_current(f)
+            item = {
+                "key": f.key,
+                "label": f.label,
+                "secret": f.secret,
+                "placeholder": f.placeholder,
+                "present": bool(cur),
+            }
+            if not f.secret:
+                item["value"] = cur
+            items.append(item)
+        out[provider] = items
+    return out
+
+
+def set_provider_creds(provider: str, fields: Dict[str, str]) -> None:
+    """Apply + persist provider access fields. Blank values are ignored (a blank
+    secret keeps the existing one), so a save never accidentally wipes a key."""
+    from backend.config import settings
+
+    provider = (provider or "").strip().lower()
+    specs = _PROVIDER_FIELDS.get(provider)
+    if not specs or not fields:
+        return
+
+    data = load()
+    store = dict(data.get("ai_provider_creds") or {})
+    pstore = dict(store.get(provider) or {})
+    applied: List[str] = []
+    for f in specs:
+        if f.key not in fields:
+            continue
+        val = (fields.get(f.key) or "").strip()
+        if not val:  # blank = keep existing (never wipe)
+            continue
+        if f.settings_attr:
+            setattr(settings, f.settings_attr, val)
+        if f.env:
+            os.environ[f.env] = val
+        pstore[f.key] = val
+        applied.append(f.key)
+
+    if applied:
+        store[provider] = pstore
+        data["ai_provider_creds"] = store
+        _persist(data)
+        # Log field NAMES only — never values.
+        logger.info("applied %s access fields: %s", provider, ", ".join(applied))
+        try:
+            from backend.agents import llm
+            llm.clear_caches()  # rebuild provider clients with the new creds
+        except Exception:
+            logger.exception("failed to clear LLM caches after credential change")
+
+
+def apply_provider_creds_from_store() -> None:
+    """Startup hook: apply any persisted provider creds over the .env defaults."""
+    from backend.config import settings
+
+    store = load().get("ai_provider_creds") or {}
+    for provider, fields in _PROVIDER_FIELDS.items():
+        saved = store.get(provider) or {}
+        for f in fields:
+            val = (saved.get(f.key) or "").strip()
+            if not val:
+                continue
+            if f.settings_attr:
+                setattr(settings, f.settings_attr, val)
+            if f.env:
+                os.environ[f.env] = val
 
 
 # ---------------------------------------------------------------------------
