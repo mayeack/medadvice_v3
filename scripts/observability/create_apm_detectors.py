@@ -108,7 +108,7 @@ def main() -> int:
         if ex:
             print(f"  exists   {d['name']}  ({ex})")
             continue
-        created = req("POST", "/v2/detector", {**d, "tags": ["medadvice", "demo", "rca"]})
+        created = req("POST", "/v2/detector", {**d, "tags": ["demobot", "demo", "rca"]})
         print(f"  created  {d['name']}  ({created.get('id')})")
     print("done")
     return 0
