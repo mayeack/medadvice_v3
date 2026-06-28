@@ -110,6 +110,11 @@ async def get_ai_provider():
     from backend import model_catalog
 
     model_catalog.ensure_loaded()  # bounded sync refresh if startup discovery hasn't finished
+    # Self-heal: if the active provider's startup probe came back empty (e.g.
+    # Ollama wasn't reachable yet), re-probe it now so newly-available models
+    # show up without an app restart. Throttled internally.
+    active = settings_store.get_ai_provider().get("provider", "")
+    model_catalog.heal_if_empty(active)
     return _provider_payload()
 
 

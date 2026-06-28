@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from typing import Callable, Dict, List
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,9 @@ _SDK_TIMEOUT = 6.0    # anthropic / openai cloud APIs
 _lock = threading.Lock()
 _loaded = False
 _AVAILABLE: Dict[str, List[str]] = {"anthropic": [], "bedrock": [], "openai": [], "ollama": []}
+# Monotonic timestamp of the last probe attempt per provider — throttles the
+# heal_if_empty() re-probe so the periodic settings poll can't hammer a provider.
+_last_probe: Dict[str, float] = {}
 
 
 def available() -> Dict[str, List[str]]:
@@ -91,21 +95,48 @@ _PROBES: Dict[str, Callable] = {
 
 
 # --------------------------------------------------------------------------- refresh
+def refresh_provider(name: str) -> List[str]:
+    """Re-probe a single provider and update its cache entry. Best-effort: an
+    unreachable endpoint / missing creds stores an empty list, never raises."""
+    from backend.config import settings
+
+    probe = _PROBES.get(name)
+    if probe is None:
+        return []
+    _last_probe[name] = time.monotonic()
+    try:
+        models = probe(settings)
+        _store(name, models)
+        logger.info("model_catalog: %s -> %d model(s)", name, len(models))
+    except Exception as exc:  # noqa: BLE001 - never break startup/UI on a probe
+        _store(name, [])
+        logger.info("model_catalog: %s discovery skipped/failed: %s", name, exc)
+    return _AVAILABLE.get(name, [])
+
+
 def refresh() -> Dict[str, List[str]]:
     """Re-probe every provider and update the cache. Best-effort per provider."""
     global _loaded
-    from backend.config import settings
-
-    for name, probe in _PROBES.items():
-        try:
-            models = probe(settings)
-            _store(name, models)
-            logger.info("model_catalog: %s -> %d model(s)", name, len(models))
-        except Exception as exc:  # noqa: BLE001 - never break startup/UI on a probe
-            _store(name, [])
-            logger.info("model_catalog: %s discovery skipped/failed: %s", name, exc)
+    for name in _PROBES:
+        refresh_provider(name)
     _loaded = True
     return available()
+
+
+def heal_if_empty(provider: str, min_interval: float = 20.0) -> None:
+    """Re-probe a provider whose cached list is empty — recovering the case where
+    its startup probe failed (e.g. Ollama not yet reachable). Throttled to at most
+    one probe per ``min_interval`` seconds so the periodic settings poll can't
+    hammer it."""
+    if not provider or provider not in _PROBES:
+        return
+    with _lock:
+        if _AVAILABLE.get(provider):
+            return  # already populated, nothing to heal
+        last = _last_probe.get(provider, 0.0)
+        if last and (time.monotonic() - last) < min_interval:
+            return  # probed too recently, respect the throttle
+    refresh_provider(provider)
 
 
 def ensure_loaded() -> None:
