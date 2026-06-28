@@ -433,6 +433,7 @@
                             <label class="inline-flex items-center gap-1.5" title="Model for the selected provider">
                                 <span class="text-slate-500 font-semibold uppercase tracking-wide text-[10px]">Model</span>
                                 <select id="modelSelect" onchange="onModelChange()" class="text-xs font-mono border border-slate-200 bg-slate-50 text-slate-800 rounded-md px-2 py-1 max-w-[18rem] focus:outline-none focus:ring-2 focus:ring-slate-300"></select>
+                                <button id="refreshModelsBtn" type="button" onclick="refreshModels()" title="Re-scan the provider for available models" class="text-xs text-slate-500 border border-slate-200 bg-slate-50 rounded-md px-1.5 py-1 hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:opacity-50">↻</button>
                             </label>
                             <label class="inline-flex items-center gap-1.5" title="Demo: report a static model name in telemetry instead of the real one. 'Emit Actual' = report the real model.">
                                 <span class="text-amber-500 font-semibold uppercase tracking-wide text-[10px]">Static emission</span>

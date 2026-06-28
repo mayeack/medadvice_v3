@@ -505,6 +505,18 @@ async function refreshActiveProvider() {
     } catch (e) { /* best-effort: never break the chat */ }
 }
 
+// Force the backend to re-scan the active provider for available models, then
+// repaint the dropdown — e.g. after pulling/building a new Ollama model.
+async function refreshModels() {
+    const btn = document.getElementById('refreshModelsBtn');
+    if (btn) btn.disabled = true;
+    try {
+        await fetch('/api/settings/ai-provider/refresh', { method: 'POST' });
+        await refreshActiveProvider();
+    } catch (e) { /* best-effort: never break the chat */ }
+    finally { if (btn) btn.disabled = false; }
+}
+
 async function _putProvider(provider, model) {
     try {
         await fetch('/api/settings/ai-provider', {
