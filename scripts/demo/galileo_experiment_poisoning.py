@@ -127,18 +127,36 @@ def _ensure_dataset(rows: List[Dict[str, Any]], name: str, refresh: bool = False
     return ds
 
 
-def _set_arm_model(client: httpx.Client, base: str, auth, model: str) -> bool:
-    """Switch the live chat model (no restart). Returns True on success."""
-    r = client.put(
-        f"{base}/api/settings/ai-provider", auth=auth,
-        json={"provider": "ollama", "model": model},
-    )
-    if r.status_code != 200:
-        print(f"  ! could not set model {model}: {r.status_code} {r.text[:160]}")
-        return False
-    cur = r.json()
-    print(f"  active model -> {cur.get('provider')}/{cur.get('model')}")
-    return True
+def _set_arm_model(client: httpx.Client, base: str, auth, model: str,
+                   attempts: int = 4, backoff: float = 2.0) -> bool:
+    """Switch the live chat model (no restart). Returns True on success.
+
+    Retries on a non-200 / transport error: the settings write persists to SQLite and
+    can TRANSIENTLY fail (``sqlite3.OperationalError: unable to open database file``)
+    right after an arm has hammered Ollama with sequential generations. Without the
+    retry, one blip on the switch silently SKIPS the entire next arm — e.g. the
+    poisoned arm — leaving a half A/B."""
+    last = ""
+    for i in range(attempts):
+        try:
+            r = client.put(
+                f"{base}/api/settings/ai-provider", auth=auth,
+                json={"provider": "ollama", "model": model},
+            )
+        except Exception as exc:  # noqa: BLE001 — transient transport error: retry
+            last = f"{type(exc).__name__}: {exc}"
+        else:
+            if r.status_code == 200:
+                cur = r.json()
+                print(f"  active model -> {cur.get('provider')}/{cur.get('model')}"
+                      + (f"  (after {i + 1} tries)" if i else ""))
+                return True
+            last = f"{r.status_code} {r.text[:160]}"
+        if i < attempts - 1:
+            print(f"  set model {model}: attempt {i + 1}/{attempts} failed ({last}); retrying ...")
+            time.sleep(backoff * (i + 1))
+    print(f"  ! could not set model {model} after {attempts} tries: {last}")
+    return False
 
 
 def _make_runner(client: httpx.Client, base: str, auth, model: str, theme: str):
@@ -181,6 +199,27 @@ def _ollama_models(client, base, auth) -> set:
     except Exception:  # noqa: BLE001
         pass
     return set()
+
+
+def _resolve_installed(model: str, installed: set) -> Optional[str]:
+    """Return the installed Ollama model name matching ``model``, tolerant of the
+    implicit ``:latest`` tag, else None.
+
+    ``ollama create`` tags artifacts ``:latest`` (the catalog reports
+    ``dolphin3-medadvice-poisoned:latest``), but the runner/CLI references the
+    model untagged (``dolphin3-medadvice-poisoned``). An exact ``in`` check then
+    misses and the poisoned arm is wrongly skipped. Compare on the ``repo:tag``
+    form with a missing tag defaulted to ``latest``, and return the real
+    installed name so the model switch uses a name the catalog recognizes."""
+    if model in installed:
+        return model
+    def _norm(m: str) -> str:
+        return m if ":" in m else f"{m}:latest"
+    target = _norm(model)
+    for m in installed:
+        if _norm(m) == target:
+            return m
+    return None
 
 
 def _run_arm(client, base, auth, arm: str, model: str, project: str, dataset, metrics,
@@ -301,8 +340,9 @@ def main() -> int:
             _run_arm(client, base, auth, "baseline", args.baseline_model, args.project,
                      dataset, metrics, f"{args.theme}-baseline-{stamp}", args.theme)
         if args.arm in ("both", "poisoned"):
-            if args.poisoned_model in _ollama_models(client, base, auth):
-                _run_arm(client, base, auth, "poisoned", args.poisoned_model, args.project,
+            poisoned = _resolve_installed(args.poisoned_model, _ollama_models(client, base, auth))
+            if poisoned:
+                _run_arm(client, base, auth, "poisoned", poisoned, args.project,
                          dataset, metrics, f"{args.theme}-poisoned-{stamp}", args.theme)
             else:
                 print(f"\nNOTE: poisoned model '{args.poisoned_model}' is not installed in Ollama "
